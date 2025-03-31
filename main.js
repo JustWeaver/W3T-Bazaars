@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Bazaars in Item Market powered by TornPal and IronNerd
+// @name         Bazaars in Item Market powered by TornPal and IronNerd BETA
 // @namespace    http://tampermonkey.net/
 // @version      2.40b
 // @description  Displays bazaar listings with sorting controls via TornPal & IronNerd
@@ -17,8 +17,6 @@
 // @connect      tornpal.com
 // @connect      www.ironnerd.me
 // @run-at       document-end
-// @downloadURL https://update.greasyfork.org/scripts/527616/Bazaars%20in%20Item%20Market%20powered%20by%20TornPal%20and%20IronNerd.user.js
-// @updateURL   https://update.greasyfork.org/scripts/527616/Bazaars%20in%20Item%20Market%20powered%20by%20TornPal%20and%20IronNerd.meta.js
 // ==/UserScript==
 
 (function () {
