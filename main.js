@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Bazaars in Item Market powered by TornPal and IronNerd BETA
+// @name         Bazaars in Item Market powered by TornPal and IronNerd
 // @namespace    http://tampermonkey.net/
-// @version      2.40b
+// @version      2.33
 // @description  Displays bazaar listings with sorting controls via TornPal & IronNerd
 // @author       Weav3r
 // @match        https://www.torn.com/*
@@ -14,9 +14,13 @@
 // @grant        GM.getValue
 // @grant        GM.deleteValue
 // @grant        GM.listValues
+// @grant        GM_xmlhttpRequest
 // @connect      tornpal.com
 // @connect      www.ironnerd.me
+// @connect      arsonwarehouse.com
 // @run-at       document-end
+// @downloadURL https://update.greasyfork.org/scripts/527616/Bazaars%20in%20Item%20Market%20powered%20by%20TornPal%20and%20IronNerd.user.js
+// @updateURL https://update.greasyfork.org/scripts/527616/Bazaars%20in%20Item%20Market%20powered%20by%20TornPal%20and%20IronNerd.meta.js
 // ==/UserScript==
 
 (function () {
@@ -30,29 +34,30 @@
                 if (value !== null) {
                     return JSON.parse(value);
                 }
-                
+
                 GM.getValue(key, defaultValue).then(val => {
                     if (val !== undefined) {
                         localStorage.setItem('GMcompat_' + key, JSON.stringify(val));
                     }
                 });
-                
+
                 return defaultValue;
             } catch (e) {
                 console.error('Error in GM_getValue compatibility:', e);
                 return defaultValue;
             }
         };
-        
+
         const GM_setValue = function(key, value) {
             try {
+                // Store in both localStorage and GM.setValue
                 localStorage.setItem('GMcompat_' + key, JSON.stringify(value));
                 GM.setValue(key, value);
             } catch (e) {
                 console.error('Error in GM_setValue compatibility:', e);
             }
         };
-        
+
         const GM_deleteValue = function(key) {
             try {
                 localStorage.removeItem('GMcompat_' + key);
@@ -61,14 +66,15 @@
                 console.error('Error in GM_deleteValue compatibility:', e);
             }
         };
-        
+
         const GM_listValues = function() {
+            // This is an approximation - we can only list keys with our prefix
             const keys = [];
             try {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key.startsWith('GMcompat_')) {
-                        keys.push(key.substring(9)); 
+                        keys.push(key.substring(9)); // Remove the prefix
                     }
                 }
             } catch (e) {
@@ -76,7 +82,7 @@
             }
             return keys;
         };
-        
+
         window.GM_getValue = GM_getValue;
         window.GM_setValue = GM_setValue;
         window.GM_deleteValue = GM_deleteValue;
@@ -173,7 +179,7 @@
                 const parsedSettings = JSON.parse(saved);
 
                 Object.assign(scriptSettings, parsedSettings);
-                
+
                 if (parsedSettings.defaultSort) {
                     currentSortKey = parsedSettings.defaultSort;
                 }
@@ -821,45 +827,6 @@
         const RETRY_DELAY_MS = 2000;
 
         function makeRequest(options) {
-            // First, check if we're running in Torn PDA
-            if (typeof window.flutter_inappwebview !== 'undefined') {
-                // Try to detect Torn PDA environment
-                return window.flutter_inappwebview.callHandler('isTornPDA')
-                    .then(response => {
-                        if (response && response.isTornPDA) {
-                            // We're in Torn PDA, use its HTTP handlers
-                            return window.flutter_inappwebview.callHandler('PDA_httpGet', options.url, options.headers || {})
-                                .then(response => {
-                                    // Convert Torn PDA response to match GM_xmlhttpRequest format
-                                    if (options.onload) {
-                                        options.onload({
-                                            status: response.status,
-                                            responseText: response.responseText,
-                                            statusText: response.statusText
-                                        });
-                                    }
-                                })
-                                .catch(error => {
-                                    if (options.onerror) {
-                                        options.onerror(error);
-                                    }
-                                });
-                        } else {
-                            // Fallback to standard methods if not in Torn PDA
-                            return handleStandardRequest(options);
-                        }
-                    })
-                    .catch(() => {
-                        // If isTornPDA handler fails, fallback to standard methods
-                        return handleStandardRequest(options);
-                    });
-            } else {
-                // Not in Torn PDA environment, use standard methods
-                return handleStandardRequest(options);
-            }
-        }
-
-        function handleStandardRequest(options) {
             if (typeof GM_xmlhttpRequest !== 'undefined') {
                 return GM_xmlhttpRequest(options);
             } else if (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest !== 'undefined') {
@@ -1000,7 +967,7 @@
         card.innerHTML = `
             <div>
                 <div style="display:flex; align-items:center; gap:5px; margin-bottom:6px; flex-wrap:wrap">
-<a href="https://www.torn.com/bazaar.php?userId=${listing.player_id}&itemId=${listing.item_id}&highlight=1&price=${listing.price}#/"
+                    <a href="https://www.torn.com/bazaar.php?userId=${listing.player_id}&itemId=${listing.item_id}&highlight=1#/"
                        data-visited-key="visited_${listing.item_id}_${listing.player_id}"
                        data-updated="${listing.updated}"
                        ${scriptSettings.linkBehavior === 'new_tab' ? 'target="_blank" rel="noopener noreferrer"' : ''}
@@ -1263,7 +1230,66 @@
         }
     }
 
-    function createInfoContainer(itemName, itemId) {
+    // Arson Function
+function fetchAndDisplayArsonWarehouseBid(itemId) {
+        const arsonWarehouseApiUrl = `https://arsonwarehouse.com/api/v1/items/${itemId}/bids`;
+        const AWH_Key = "ENTER_HERE_YOUR_AWH_API";
+
+        if (!AWH_Key) {
+            console.warn("ArsonWarehouse API key not set. Cannot fetch bid.");
+            return;
+        }
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: arsonWarehouseApiUrl,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Basic ' + btoa(AWH_Key + ':')
+            },
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data && data.bids && data.bids.length > 0) {
+                            // Find the first bid with minimum_quantity of 1
+                            const quantityOneBid = data.bids.find(bid => bid.minimum_quantity === 1);
+
+                            if (quantityOneBid) {
+                                const arsonWarehousePriceText = ` / AW: $${Number(quantityOneBid.price).toLocaleString()}`;
+
+                                // Target the bazaar-info-header for the current item
+                                const infoContainer = document.querySelector(`.bazaar-info-container[data-itemid="${itemId}"]`);
+                                if (infoContainer) {
+                                    const header = infoContainer.querySelector('.bazaar-info-header');
+                                    if (header) {
+                                        const awSpan = document.createElement('span');
+                                        awSpan.style.marginLeft = '8px';
+                                        awSpan.style.fontSize = '14px';
+                                        awSpan.style.fontWeight = 'normal';
+                                        awSpan.style.color = 'orange';
+                                        awSpan.textContent = `• ${arsonWarehousePriceText}`;
+                                        header.appendChild(awSpan);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error parsing ArsonWarehouse bids:", e);
+                    }
+                } else {
+                    console.error("Failed to fetch ArsonWarehouse bids:", response.status, response.responseText);
+                }
+            },
+            onerror: function(error) {
+                console.error("Error fetching ArsonWarehouse bids:", error);
+            }
+        });
+    }
+
+
+
+function createInfoContainer(itemName, itemId) {
         const container = document.createElement('div');
         container.className = 'bazaar-info-container';
         container.dataset.itemid = itemId;
@@ -1271,6 +1297,7 @@
         const header = document.createElement('div');
         header.className = 'bazaar-info-header';
         let marketValueText = "";
+        let marketValueElement; // Declare here
         try {
             const stored = getStoredItems();
             const match = Object.values(stored).find(item =>
@@ -1281,7 +1308,7 @@
         } catch (e) {
             console.error("Header market value error:", e);
         }
-        header.textContent = `Bazaar Listings for ${itemName} (ID: ${itemId})`;
+        header.textContent = `${itemName} (ID: ${itemId})`;
         if (marketValueText) {
             const span = document.createElement('span');
             span.style.marginLeft = '8px';
@@ -1290,6 +1317,7 @@
             span.style.color = currentDarkMode ? '#aaa' : '#666';
             span.textContent = `• ${marketValueText}`;
             header.appendChild(span);
+            marketValueElement = span; // Assign the created span
         }
         container.appendChild(header);
         currentSortOrder = getSortOrderForKey(currentSortKey);
@@ -1311,8 +1339,18 @@
             </button>
             <span style="margin-left: 8px;">Min Qty:</span>
             <input type="number" class="bazaar-min-qty" style="width: 60px; padding: 3px; border: 1px solid #ccc; border-radius: 4px;" min="0" placeholder="">
+            <span class="arson-warehouse-bid-container" style="margin-left: 8px; color: orange;"></span>
         `;
         container.appendChild(sortControls);
+
+        const arsonBidContainer = container.querySelector('.arson-warehouse-bid-container');
+        if (marketValueElement && arsonBidContainer) {
+            fetchAndDisplayArsonWarehouseBid(itemId, arsonBidContainer);
+        } else if (!marketValueElement && arsonBidContainer) {
+            // If no market value is displayed, still fetch the bid (you might want to adjust this)
+            fetchAndDisplayArsonWarehouseBid(itemId, arsonBidContainer);
+        }
+
         const scrollContainer = document.createElement('div');
         scrollContainer.className = 'bazaar-scroll-container';
         function createScrollArrow(direction) {
@@ -1403,6 +1441,7 @@
         container.appendChild(footerContainer);
         return container;
     }
+
 
     function sortListings(listings) {
         return listings.slice().sort((a, b) => {
@@ -1679,7 +1718,7 @@
     if (window.location.href.includes("bazaar.php")) {
         function scrollToTargetItem() {
             const params = new URLSearchParams(window.location.search);
-            const targetItemId = params.get("itemId"), highlight = params.get("highlight"), priceParam = params.get("price");
+            const targetItemId = params.get("itemId"), highlight = params.get("highlight");
             if (!targetItemId || highlight !== "1") return;
             function removeHighlightParam() {
                 params.delete("highlight");
@@ -1696,27 +1735,6 @@
             }
             function findItemCard() {
                 const img = document.querySelector(`img[src*="/images/items/${targetItemId}/"]`);
-                if (!img) return null;
-                
-                if (priceParam) {
-                    // Look for all potential item cards with this image
-                    const allCards = document.querySelectorAll(`[class*=item_]`);
-                    for (const card of allCards) {
-                        if (card.querySelector(`img[src*="/images/items/${targetItemId}/"]`)) {
-                            const priceElement = card.querySelector('[class*=price_]');
-                            if (priceElement) {
-                                // Clean up the price text to match format from URL
-                                const priceText = priceElement.textContent.trim();
-                                const cleanPrice = priceText.replace(/[$,]/g, '');
-                                if (cleanPrice == priceParam) {
-                                    return card;
-                                }
-                            }
-                        }
-                    }
-                    return null;
-                }
-                
                 return img ? img.closest('.item___GYCYJ') : null;
             }
             const scrollInterval = setInterval(() => {
@@ -2104,7 +2122,7 @@
         scriptSettings.listingFee = Math.round(parseFloat(modal.querySelector('#bazaar-listing-fee').value) || 0);
         scriptSettings.defaultDisplayMode = modal.querySelector('#bazaar-default-display').value;
         scriptSettings.linkBehavior = modal.querySelector('#bazaar-link-behavior').value;
-        
+
         if (scriptSettings.listingFee < 0) scriptSettings.listingFee = 0;
         if (scriptSettings.listingFee > 100) scriptSettings.listingFee = 100;
         currentSortKey = scriptSettings.defaultSort;
@@ -2144,11 +2162,11 @@
               lastHour = Math.floor(parseInt(lastUpdated) / (60 * 60 * 1000)),
               currentHour = Math.floor(now / (60 * 60 * 1000));
 
-        const needsRefresh = forceRefresh || 
-                             lastUTC < todayUTC || 
+        const needsRefresh = forceRefresh ||
+                             lastUTC < todayUTC ||
                              (now - lastUpdated) >= oneDayMs ||
                              (lastHour < currentHour && (currentHour - lastHour) >= 1);
-        
+
         if (scriptSettings.apiKey && (!stored || needsRefresh)) {
             const refreshStatus = document.getElementById('refresh-status');
             if (refreshStatus) {
@@ -2156,7 +2174,7 @@
                 refreshStatus.textContent = 'Fetching market values...';
                 refreshStatus.style.color = currentDarkMode ? '#aaa' : '#666';
             }
-            
+
             return fetch(`https://api.torn.com/torn/?key=${scriptSettings.apiKey}&selections=items&comment=wBazaars`)
                 .then(r => r.json())
                 .then(data => {
@@ -2171,9 +2189,9 @@
                         }
                         return false;
                     }
-                    
+
                     cachedItemsData = null;
-                    
+
                     const filtered = {};
                     for (let [id, item] of Object.entries(data.items)) {
                         if (item.tradeable) {
@@ -2182,7 +2200,7 @@
                     }
                     GM_setValue("tornItems", JSON.stringify(filtered));
                     GM_setValue("lastTornItemsUpdate", now.toString());
-                    
+
                     if (refreshStatus) {
                         refreshStatus.textContent = `Market values updated successfully! (${todayUTC})`;
                         refreshStatus.style.color = '#009900';
@@ -2190,7 +2208,7 @@
                             refreshStatus.style.display = 'none';
                         }, 3000);
                     }
-                    
+
                     document.querySelectorAll('.bazaar-info-container').forEach(container => {
                         if (container.isConnected) {
                             const cardContainer = container.querySelector('.bazaar-card-container');
@@ -2201,7 +2219,7 @@
                             }
                         }
                     });
-                    
+
                     return true;
                 })
                 .catch(err => {
@@ -2224,7 +2242,7 @@
             event.preventDefault();
             const apiKeyInput = document.getElementById('bazaar-api-key');
             const refreshStatus = document.getElementById('refresh-status');
-            
+
             if (!apiKeyInput || !apiKeyInput.value.trim()) {
                 if (refreshStatus) {
                     refreshStatus.style.display = 'block';
@@ -2236,7 +2254,7 @@
                 }
                 return;
             }
-            
+
             scriptSettings.apiKey = apiKeyInput.value.trim();
             fetchTornItems(true);
         }
@@ -2281,190 +2299,5 @@
         });
     }
     window.addEventListener('beforeunload', cleanupResources);
-
-    // Function to detect if running in Torn PDA
-    function isTornPDAEnvironment() {
-        return new Promise((resolve) => {
-            if (typeof window.flutter_inappwebview !== 'undefined') {
-                window.flutter_inappwebview.callHandler('isTornPDA')
-                    .then(response => {
-                        resolve(response && response.isTornPDA);
-                    })
-                    .catch(() => {
-                        resolve(false);
-                    });
-            } else {
-                resolve(false);
-            }
-        });
-    }
-
-    // Function to evaluate JavaScript using appropriate method based on environment
-    function evaluateJavaScript(code) {
-        return new Promise((resolve, reject) => {
-            isTornPDAEnvironment()
-                .then(isPDA => {
-                    if (isPDA) {
-                        // Use Torn PDA's JavaScript evaluation handler
-                        window.flutter_inappwebview.callHandler('PDA_evaluateJavascript', code)
-                            .then(resolve)
-                            .catch(reject);
-                    } else {
-                        // Use standard eval in non-PDA environments
-                        try {
-                            // Using Function constructor is slightly safer than direct eval
-                            const result = Function('"use strict";' + code)();
-                            resolve(result);
-                        } catch (error) {
-                            reject(error);
-                        }
-                    }
-                })
-                .catch(reject);
-        });
-    }
-
-    // Create a function to handle API POST requests to TornPal and IronNerd
-    function makeAPIPostRequest(url, data, callback) {
-        const MAX_RETRIES = 2;
-        const TIMEOUT_MS = 10000;
-        const RETRY_DELAY_MS = 2000;
-        let retryCount = 0;
-
-        function attemptPost() {
-            let timeoutId = setTimeout(() => {
-                console.warn(`POST request to ${url} timed out, ${retryCount < MAX_RETRIES ? 'retrying...' : 'giving up.'}`);
-                if (retryCount < MAX_RETRIES) {
-                    retryCount++;
-                    setTimeout(attemptPost, RETRY_DELAY_MS);
-                } else {
-                    callback(null);
-                }
-            }, TIMEOUT_MS);
-
-            // Determine if we're in Torn PDA environment
-            if (typeof window.flutter_inappwebview !== 'undefined') {
-                window.flutter_inappwebview.callHandler('isTornPDA')
-                    .then(response => {
-                        if (response && response.isTornPDA) {
-                            // Use Torn PDA's HTTP POST handler
-                            const headers = {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json'
-                            };
-                            
-                            const body = typeof data === 'string' ? data : JSON.stringify(data);
-                            
-                            window.flutter_inappwebview.callHandler('PDA_httpPost', url, headers, body)
-                                .then(response => {
-                                    clearTimeout(timeoutId);
-                                    try {
-                                        if (response.status >= 200 && response.status < 300) {
-                                            callback(JSON.parse(response.responseText));
-                                        } else {
-                                            console.warn(`POST request to ${url} failed with status ${response.status}`);
-                                            if (retryCount < MAX_RETRIES) {
-                                                retryCount++;
-                                                setTimeout(attemptPost, RETRY_DELAY_MS);
-                                            } else {
-                                                callback(null);
-                                            }
-                                        }
-                                    } catch (e) {
-                                        console.error(`Error parsing response from ${url}:`, e);
-                                        callback(null);
-                                    }
-                                })
-                                .catch(error => {
-                                    clearTimeout(timeoutId);
-                                    console.warn(`POST request to ${url} failed:`, error);
-                                    if (retryCount < MAX_RETRIES) {
-                                        retryCount++;
-                                        setTimeout(attemptPost, RETRY_DELAY_MS);
-                                    } else {
-                                        callback(null);
-                                    }
-                                });
-                        } else {
-                            // Use standard GM methods
-                            useStandardPostMethod();
-                        }
-                    })
-                    .catch(() => {
-                        // If handler check fails, use standard methods
-                        useStandardPostMethod();
-                    });
-            } else {
-                // Not in Torn PDA, use standard methods
-                useStandardPostMethod();
-            }
-
-            function useStandardPostMethod() {
-                const postFunction = typeof GM_xmlhttpRequest !== 'undefined' 
-                    ? GM_xmlhttpRequest 
-                    : (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest !== 'undefined' 
-                        ? GM.xmlHttpRequest 
-                        : null);
-                
-                if (!postFunction) {
-                    console.error('Neither GM_xmlhttpRequest nor GM.xmlHttpRequest are available');
-                    clearTimeout(timeoutId);
-                    callback(null);
-                    return;
-                }
-                
-                postFunction({
-                    method: 'POST',
-                    url,
-                    data: typeof data === 'string' ? data : JSON.stringify(data),
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    timeout: TIMEOUT_MS,
-                    onload: res => {
-                        clearTimeout(timeoutId);
-                        try {
-                            if (res.status >= 200 && res.status < 300) {
-                                callback(JSON.parse(res.responseText));
-                            } else {
-                                console.warn(`POST request to ${url} failed with status ${res.status}`);
-                                if (retryCount < MAX_RETRIES) {
-                                    retryCount++;
-                                    setTimeout(attemptPost, RETRY_DELAY_MS);
-                                } else {
-                                    callback(null);
-                                }
-                            }
-                        } catch (e) {
-                            console.error(`Error parsing response from ${url}:`, e);
-                            callback(null);
-                        }
-                    },
-                    onerror: (error) => {
-                        clearTimeout(timeoutId);
-                        console.warn(`POST request to ${url} failed:`, error);
-                        if (retryCount < MAX_RETRIES) {
-                            retryCount++;
-                            setTimeout(attemptPost, RETRY_DELAY_MS);
-                        } else {
-                            callback(null);
-                        }
-                    },
-                    ontimeout: () => {
-                        clearTimeout(timeoutId);
-                        console.warn(`POST request to ${url} timed out natively`);
-                        if (retryCount < MAX_RETRIES) {
-                            retryCount++;
-                            setTimeout(attemptPost, RETRY_DELAY_MS);
-                        } else {
-                            callback(null);
-                        }
-                    }
-                });
-            }
-        }
-        
-        attemptPost();
-    }
 })();
+
