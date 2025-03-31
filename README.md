@@ -1,9 +1,5 @@
-# Bazaars in Item Market (Beta Branch)
-
-**Version: 2.40b**
-
-⚠️ **BETA VERSION** ⚠️  
-This is a beta branch of the Bazaars in Item Market script. Features may be incomplete, experimental, or potentially unstable.
+> **⚠️ IMPORTANT DISCLAIMER ⚠️**  
+This is a **BETA** branch intended for testing purposes only. Features may be broken, incomplete, or behave unexpectedly. If you're looking for a stable experience, please use the [main release version](https://www.torn.com/forums.php#/p=threads&f=67&t=16451791&b=0&a=0) instead.
 
 ## For Beta Testers
 
