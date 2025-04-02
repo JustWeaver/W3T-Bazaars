@@ -1,0 +1,28 @@
+{
+	"name": "bazaars-in-market",
+	"module": "src/index.ts",
+	"type": "module",
+	"scripts": {
+		"build": "vite build",
+		"build:safe": "tsc && vite build",
+		"check": "biome check ./src",
+		"check:unsafe": "biome check --unsafe ./src",
+		"gen:v1": "bunx @kwack-dev/tornapi > ./src/utils/api/torn/v1.ts",
+		"get:v2": "curl -H 'User-Agent: yes' https://www.torn.com/swagger/openapi.json -o ./torn.json"
+	},
+	"dependencies": {
+		"vite": "^6.2.3",
+		"vite-plugin-monkey": "^5.0.8"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@kwack-dev/tornapi": "^3.0.1",
+		"@types/jquery": "^3.5.32",
+		"@types/jqueryui": "^1.12.24",
+		"@types/tampermonkey": "^5.0.4"
+	},
+	"peerDependencies": {
+		"typescript": "^5.8.2"
+	},
+	"trustedDependencies": ["@biomejs/biome"]
+}
