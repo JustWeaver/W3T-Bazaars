@@ -4,7 +4,7 @@
 // @version      2.40b
 // @description  Displays bazaar listings with sorting controls via TornPal & IronNerd
 // @author       Weav3r
-// @match        https://www.torn.com/*
+// @match        https://www.torn.com/page.php?sid=ItemMarket*
 // @grant        GM.xmlHttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -14,8 +14,10 @@
 // @grant        GM.getValue
 // @grant        GM.deleteValue
 // @grant        GM.listValues
+// @grant        GM_xmlhttpRequest
 // @connect      tornpal.com
 // @connect      www.ironnerd.me
+// @connect      arsonwarehouse.com
 // @run-at       document-end
 // ==/UserScript==
 
@@ -30,20 +32,20 @@
                 if (value !== null) {
                     return JSON.parse(value);
                 }
-                
+
                 GM.getValue(key, defaultValue).then(val => {
                     if (val !== undefined) {
                         localStorage.setItem('GMcompat_' + key, JSON.stringify(val));
                     }
                 });
-                
+
                 return defaultValue;
             } catch (e) {
                 console.error('Error in GM_getValue compatibility:', e);
                 return defaultValue;
             }
         };
-        
+
         const GM_setValue = function(key, value) {
             try {
                 localStorage.setItem('GMcompat_' + key, JSON.stringify(value));
@@ -52,7 +54,7 @@
                 console.error('Error in GM_setValue compatibility:', e);
             }
         };
-        
+
         const GM_deleteValue = function(key) {
             try {
                 localStorage.removeItem('GMcompat_' + key);
@@ -61,14 +63,14 @@
                 console.error('Error in GM_deleteValue compatibility:', e);
             }
         };
-        
+
         const GM_listValues = function() {
             const keys = [];
             try {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key.startsWith('GMcompat_')) {
-                        keys.push(key.substring(9)); 
+                        keys.push(key.substring(9));
                     }
                 }
             } catch (e) {
@@ -76,7 +78,7 @@
             }
             return keys;
         };
-        
+
         window.GM_getValue = GM_getValue;
         window.GM_setValue = GM_setValue;
         window.GM_deleteValue = GM_deleteValue;
@@ -173,7 +175,7 @@
                 const parsedSettings = JSON.parse(saved);
 
                 Object.assign(scriptSettings, parsedSettings);
-                
+
                 if (parsedSettings.defaultSort) {
                     currentSortKey = parsedSettings.defaultSort;
                 }
@@ -1263,6 +1265,63 @@
         }
     }
 
+        // Arson Function
+        function fetchAndDisplayArsonWarehouseBid(itemId) {
+        const arsonWarehouseApiUrl = `https://arsonwarehouse.com/api/v1/items/${itemId}/bids`;
+        const AWH_Key = "ARSON API GOES HERE";
+
+        if (!AWH_Key) {
+            console.warn("ArsonWarehouse API key not set. Cannot fetch bid.");
+            return;
+        }
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: arsonWarehouseApiUrl,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Basic ' + btoa(AWH_Key + ':')
+            },
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data && data.bids && data.bids.length > 0) {
+                            // Find the first bid with minimum_quantity of 1
+                            const quantityOneBid = data.bids.find(bid => bid.minimum_quantity === 1);
+
+                            if (quantityOneBid) {
+                                const arsonWarehousePriceText = `  AW: $${Number(quantityOneBid.price).toLocaleString()}`;
+
+                                // Target the bazaar-info-header for the current item
+                                const infoContainer = document.querySelector(`.bazaar-info-container[data-itemid="${itemId}"]`);
+                                if (infoContainer) {
+                                    const header = infoContainer.querySelector('.bazaar-info-header');
+                                    if (header) {
+                                        const awSpan = document.createElement('span');
+                                        awSpan.style.marginLeft = '8px';
+                                        awSpan.style.fontSize = '14px';
+                                        awSpan.style.fontWeight = 'normal';
+                                        awSpan.style.color = 'orange';
+                                        awSpan.textContent = `• ${arsonWarehousePriceText}`;
+                                        header.appendChild(awSpan);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error parsing ArsonWarehouse bids:", e);
+                    }
+                } else {
+                    console.error("Failed to fetch ArsonWarehouse bids:", response.status, response.responseText);
+                }
+            },
+            onerror: function(error) {
+                console.error("Error fetching ArsonWarehouse bids:", error);
+            }
+        });
+    }
+
     function createInfoContainer(itemName, itemId) {
         const container = document.createElement('div');
         container.className = 'bazaar-info-container';
@@ -1271,6 +1330,7 @@
         const header = document.createElement('div');
         header.className = 'bazaar-info-header';
         let marketValueText = "";
+        let marketValueElement; // Declare here
         try {
             const stored = getStoredItems();
             const match = Object.values(stored).find(item =>
@@ -1281,7 +1341,7 @@
         } catch (e) {
             console.error("Header market value error:", e);
         }
-        header.textContent = `Bazaar Listings for ${itemName} (ID: ${itemId})`;
+        header.textContent = `${itemName} (ID: ${itemId})`;
         if (marketValueText) {
             const span = document.createElement('span');
             span.style.marginLeft = '8px';
@@ -1290,6 +1350,8 @@
             span.style.color = currentDarkMode ? '#aaa' : '#666';
             span.textContent = `• ${marketValueText}`;
             header.appendChild(span);
+            marketValueElement = span; // Assign the created span
+            console.log(marketValueElement)
         }
         container.appendChild(header);
         currentSortOrder = getSortOrderForKey(currentSortKey);
@@ -1311,8 +1373,18 @@
             </button>
             <span style="margin-left: 8px;">Min Qty:</span>
             <input type="number" class="bazaar-min-qty" style="width: 60px; padding: 3px; border: 1px solid #ccc; border-radius: 4px;" min="0" placeholder="">
+            <span class="arson-warehouse-bid-container" style="margin-left: 8px; color: orange;"></span>
         `;
         container.appendChild(sortControls);
+
+        const arsonBidContainer = container.querySelector('.arson-warehouse-bid-container');
+        if (marketValueElement && arsonBidContainer) {
+            fetchAndDisplayArsonWarehouseBid(itemId, arsonBidContainer);
+        } else if (!marketValueElement && arsonBidContainer) {
+            // If no market value is displayed, still fetch the bid (you might want to adjust this)
+            fetchAndDisplayArsonWarehouseBid(itemId, arsonBidContainer);
+        }
+
         const scrollContainer = document.createElement('div');
         scrollContainer.className = 'bazaar-scroll-container';
         function createScrollArrow(direction) {
@@ -1697,7 +1769,7 @@
             function findItemCard() {
                 const img = document.querySelector(`img[src*="/images/items/${targetItemId}/"]`);
                 if (!img) return null;
-                
+
                 if (priceParam) {
                     // Look for all potential item cards with this image
                     const allCards = document.querySelectorAll(`[class*=item_]`);
@@ -1716,7 +1788,7 @@
                     }
                     return null;
                 }
-                
+
                 return img ? img.closest('.item___GYCYJ') : null;
             }
             const scrollInterval = setInterval(() => {
@@ -2104,7 +2176,7 @@
         scriptSettings.listingFee = Math.round(parseFloat(modal.querySelector('#bazaar-listing-fee').value) || 0);
         scriptSettings.defaultDisplayMode = modal.querySelector('#bazaar-default-display').value;
         scriptSettings.linkBehavior = modal.querySelector('#bazaar-link-behavior').value;
-        
+
         if (scriptSettings.listingFee < 0) scriptSettings.listingFee = 0;
         if (scriptSettings.listingFee > 100) scriptSettings.listingFee = 100;
         currentSortKey = scriptSettings.defaultSort;
@@ -2144,11 +2216,11 @@
               lastHour = Math.floor(parseInt(lastUpdated) / (60 * 60 * 1000)),
               currentHour = Math.floor(now / (60 * 60 * 1000));
 
-        const needsRefresh = forceRefresh || 
-                             lastUTC < todayUTC || 
+        const needsRefresh = forceRefresh ||
+                             lastUTC < todayUTC ||
                              (now - lastUpdated) >= oneDayMs ||
                              (lastHour < currentHour && (currentHour - lastHour) >= 1);
-        
+
         if (scriptSettings.apiKey && (!stored || needsRefresh)) {
             const refreshStatus = document.getElementById('refresh-status');
             if (refreshStatus) {
@@ -2156,7 +2228,7 @@
                 refreshStatus.textContent = 'Fetching market values...';
                 refreshStatus.style.color = currentDarkMode ? '#aaa' : '#666';
             }
-            
+
             return fetch(`https://api.torn.com/torn/?key=${scriptSettings.apiKey}&selections=items&comment=wBazaars`)
                 .then(r => r.json())
                 .then(data => {
@@ -2171,9 +2243,9 @@
                         }
                         return false;
                     }
-                    
+
                     cachedItemsData = null;
-                    
+
                     const filtered = {};
                     for (let [id, item] of Object.entries(data.items)) {
                         if (item.tradeable) {
@@ -2182,7 +2254,7 @@
                     }
                     GM_setValue("tornItems", JSON.stringify(filtered));
                     GM_setValue("lastTornItemsUpdate", now.toString());
-                    
+
                     if (refreshStatus) {
                         refreshStatus.textContent = `Market values updated successfully! (${todayUTC})`;
                         refreshStatus.style.color = '#009900';
@@ -2190,7 +2262,7 @@
                             refreshStatus.style.display = 'none';
                         }, 3000);
                     }
-                    
+
                     document.querySelectorAll('.bazaar-info-container').forEach(container => {
                         if (container.isConnected) {
                             const cardContainer = container.querySelector('.bazaar-card-container');
@@ -2201,7 +2273,7 @@
                             }
                         }
                     });
-                    
+
                     return true;
                 })
                 .catch(err => {
@@ -2224,7 +2296,7 @@
             event.preventDefault();
             const apiKeyInput = document.getElementById('bazaar-api-key');
             const refreshStatus = document.getElementById('refresh-status');
-            
+
             if (!apiKeyInput || !apiKeyInput.value.trim()) {
                 if (refreshStatus) {
                     refreshStatus.style.display = 'block';
@@ -2236,7 +2308,7 @@
                 }
                 return;
             }
-            
+
             scriptSettings.apiKey = apiKeyInput.value.trim();
             fetchTornItems(true);
         }
@@ -2352,9 +2424,9 @@
                                 'Content-Type': 'application/json',
                                 'Accept': 'application/json'
                             };
-                            
+
                             const body = typeof data === 'string' ? data : JSON.stringify(data);
-                            
+
                             window.flutter_inappwebview.callHandler('PDA_httpPost', url, headers, body)
                                 .then(response => {
                                     clearTimeout(timeoutId);
@@ -2400,19 +2472,19 @@
             }
 
             function useStandardPostMethod() {
-                const postFunction = typeof GM_xmlhttpRequest !== 'undefined' 
-                    ? GM_xmlhttpRequest 
-                    : (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest !== 'undefined' 
-                        ? GM.xmlHttpRequest 
+                const postFunction = typeof GM_xmlhttpRequest !== 'undefined'
+                    ? GM_xmlhttpRequest
+                    : (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest !== 'undefined'
+                        ? GM.xmlHttpRequest
                         : null);
-                
+
                 if (!postFunction) {
                     console.error('Neither GM_xmlhttpRequest nor GM.xmlHttpRequest are available');
                     clearTimeout(timeoutId);
                     callback(null);
                     return;
                 }
-                
+
                 postFunction({
                     method: 'POST',
                     url,
@@ -2464,7 +2536,7 @@
                 });
             }
         }
-        
+
         attemptPost();
     }
 })();
