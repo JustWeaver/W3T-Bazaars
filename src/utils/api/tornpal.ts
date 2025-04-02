@@ -1,3 +1,4 @@
+import logger from "../logger";
 import storage from "../storage";
 import { makeRequest } from "./fetch";
 
@@ -39,6 +40,8 @@ export async function getBazaarListings(
 		// TODO: check if the code is 429
 		// If it is, kill all requests for the following minute (check how long exactly)
 
+		logger.warn("Failed to fetch bazaar data from Torn Pal.", data);
+
 		return null;
 	}
 
@@ -46,6 +49,8 @@ export async function getBazaarListings(
 		amount: 30,
 		unit: "Seconds",
 	});
+
+	logger.debug(`Returned fresh data for item ${itemId}`);
 
 	return data;
 }

@@ -79,7 +79,7 @@ export class Storage {
 				return null;
 			}
 
-			const item = JSON.parse(itemStr).catch(null);
+			const item = JSON.parse(itemStr);
 
 			if (!item) {
 				logger.warn(`Key '${key}' has invalid JSON in it.`);

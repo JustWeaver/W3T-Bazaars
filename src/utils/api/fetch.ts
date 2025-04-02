@@ -1,3 +1,4 @@
+// This doesn't feel like it's enough information to pass through. I'll most likely expand this.
 type CommonError = {
 	code: number;
 	message: string;
@@ -83,7 +84,7 @@ async function monkeyRequest<T>(
 		};
 	}
 
-	return response.response;
+	return JSON.parse(response.responseText);
 }
 
 export async function makeRequest<T>(

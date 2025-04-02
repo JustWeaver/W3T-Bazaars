@@ -163,4 +163,4 @@ export class Logger {
 	}
 }
 
-export default new Logger("Mavri");
+export default new Logger("W3T");
