@@ -1,7 +1,18 @@
-// This doesn't feel like it's enough information to pass through. I'll most likely expand this.
 type CommonError = {
 	code: number;
 	message: string;
+	url: string;
+	method: string;
+	timestamp: number;
+	requestDetails?: {
+		headers?: Record<string, string>;
+		body?: string;
+	};
+	responseDetails?: {
+		headers?: Record<string, string>;
+		body?: string;
+		statusText?: string;
+	};
 };
 
 type Errorable<T> = T | CommonError;
@@ -27,64 +38,185 @@ const isTornPDA = pdaKey.includes("PDA-APIKEY") === false;
 async function normalRequest<T>(
 	options: RequestOptions,
 ): Promise<Errorable<T>> {
-	const response = await fetch(options.url, {
-		method: options.method,
-		headers: options.headers,
-		body: options.body,
-	});
+	try {
+		const response = await fetch(options.url, {
+			method: options.method || "GET",
+			headers: options.headers,
+			body: options.body,
+		});
 
-	if (!response.ok) {
-		const body = await response.json().catch(null);
+		if (!response.ok) {
+			const responseBody = await response.text();
+			let errorCode = response.status;
+			let errorMessage = response.statusText;
 
-		if (!body) {
+			try {
+				const parsedBody = JSON.parse(responseBody);
+
+				// Checks if it's a Torn API error
+				if (parsedBody?.error?.code) {
+					errorCode = parsedBody.error.code;
+					errorMessage = parsedBody.error.message;
+				}
+			} catch (e) {
+				// Response wasn't valid JSON, use the raw text
+			}
+
+			const responseHeaders: Record<string, string> = {};
+			response.headers.forEach((value, key) => {
+				responseHeaders[key] = value;
+			});
+
 			return {
-				code: response.status,
-				message: "Something lol",
+				code: errorCode,
+				message: errorMessage,
+				url: options.url,
+				method: options.method || "GET",
+				timestamp: Date.now(),
+				requestDetails: {
+					headers: options.headers,
+					body: options.body,
+				},
+				responseDetails: {
+					headers: responseHeaders,
+					body: responseBody,
+					statusText: response.statusText,
+				},
 			};
 		}
 
-		// TODO: This assumes it's a TornAPI error. It's not ideal, but realistically it's correct :p
+		return response.json();
+	} catch (error) {
 		return {
-			code: body.error.code,
-			message: body?.error?.message,
+			code: 0,
+			message:
+				error instanceof Error ? error.message : "Unknown error occurred",
+			url: options.url,
+			method: options.method || "GET",
+			timestamp: Date.now(),
+			requestDetails: {
+				headers: options.headers,
+				body: options.body,
+			},
 		};
 	}
-
-	return response.json();
 }
 
 async function pdaRequest<T>(options: RequestOptions): Promise<Errorable<T>> {
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-	const response = (await (window as any).flutter_inappwebview.callHandler(
-		"PDA_httpPost",
-		options.url,
-		options.headers,
-		options.body,
-	)) as PDAHttpRequest;
+	try {
+		// biome-ignore lint/suspicious/noExplicitAny: There's no types available for this
+		const response = (await (window as any).flutter_inappwebview.callHandler(
+			"PDA_httpPost",
+			options.url,
+			options.headers,
+			options.body,
+		)) as PDAHttpRequest;
 
-	if (response.status !== 200) {
+		if (response.status !== 200) {
+			const responseHeaders: Record<string, string> = {};
+			try {
+				if (response.responseHeaders) {
+					for (const line of response.responseHeaders.split("\n")) {
+						const [key, value] = line.split(":", 2);
+						if (key && value) {
+							responseHeaders[key.trim()] = value.trim();
+						}
+					}
+				}
+			} catch (e) {}
+
+			return {
+				code: response.status,
+				message: response.statusText || "PDA request failed",
+				url: options.url,
+				method: options.method || "POST",
+				timestamp: Date.now(),
+				requestDetails: {
+					headers: options.headers,
+					body: options.body,
+				},
+				responseDetails: {
+					headers: responseHeaders,
+					body: response.responseText,
+					statusText: response.statusText,
+				},
+			};
+		}
+
+		return JSON.parse(response.responseText);
+	} catch (error) {
 		return {
-			code: response.status,
-			message: "Call failed.",
+			code: 0,
+			message:
+				error instanceof Error ? error.message : "Unknown PDA error occurred",
+			url: options.url,
+			method: options.method || "POST",
+			timestamp: Date.now(),
+			requestDetails: {
+				headers: options.headers,
+				body: options.body,
+			},
 		};
 	}
-
-	return JSON.parse(response.responseText);
 }
 
 async function monkeyRequest<T>(
 	options: RequestOptions,
 ): Promise<Errorable<T>> {
-	const response = await GM.xmlHttpRequest<T>(options);
+	try {
+		const response = await GM.xmlHttpRequest<T>(options);
 
-	if (response.status !== 200) {
+		if (response.status !== 200) {
+			const responseHeaders: Record<string, string> = {};
+
+			try {
+				if (response.responseHeaders) {
+					for (const line of response.responseHeaders.split("\n")) {
+						const [key, value] = line.split(":", 2);
+						if (key && value) {
+							responseHeaders[key.trim()] = value.trim();
+						}
+					}
+				}
+			} catch (e) {}
+
+			return {
+				code: response.status,
+				message:
+					typeof response.statusText === "string"
+						? response.statusText
+						: "Request failed",
+				url: options.url,
+				method: options.method || "GET",
+				timestamp: Date.now(),
+				requestDetails: {
+					headers: options.headers,
+					body: options.body,
+				},
+				responseDetails: {
+					headers: responseHeaders,
+					body: response.responseText,
+				},
+			};
+		}
+
+		return JSON.parse(response.responseText);
+	} catch (error) {
 		return {
-			code: response.status,
-			message: response.responseText,
+			code: 0,
+			message:
+				error instanceof Error
+					? error.message
+					: "Unknown Monkey error occurred",
+			url: options.url,
+			method: options.method || "GET",
+			timestamp: Date.now(),
+			requestDetails: {
+				headers: options.headers,
+				body: options.body,
+			},
 		};
 	}
-
-	return JSON.parse(response.responseText);
 }
 
 export async function makeRequest<T>(

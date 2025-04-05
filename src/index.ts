@@ -7,6 +7,24 @@ import logger from "./utils/logger.ts";
 async function main(): Promise<void> {
 	logger.info("Script loaded. Go wild!");
 
+	const originalFetch = window.fetch;
+
+	unsafeWindow.fetch = async (...args) => {
+		const response = await originalFetch(...args);
+		const url = args[0]?.toString() || "";
+
+		if (!url.includes("page.php?sid=iMarket&step=getListing&rfcv=")) {
+			return response;
+		}
+
+		const cloned = response.clone();
+		const responseData = await cloned.json();
+
+		logger.info("Found IM request.", responseData);
+
+		return response;
+	};
+
 	// const data = await getBazaarListings("206");
 
 	// logger.info("Xanax Data:", data);

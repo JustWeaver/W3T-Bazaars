@@ -15,7 +15,7 @@ export default defineConfig({
 					"Displays bazaar listings with sorting controls via TornPal.",
 				match: ["https://www.torn.com/*"], // Change this to something more sane
 				connect: ["tornpal.com"],
-				"run-at": "document-end",
+				"run-at": "document-start",
 			},
 		}),
 	],

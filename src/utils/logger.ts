@@ -159,7 +159,7 @@ export class Logger {
 
 		const prefix = this.prefix ? `[${this.prefix}]` : "";
 
-		return level ? `[${prefix}] - [${level}]: ` : `[${prefix}]: `;
+		return level ? `${prefix} - [${level}]: ` : `${prefix}: `;
 	}
 }
 

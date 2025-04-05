@@ -1,5 +1,5 @@
 import logger from "../logger";
-import storage from "../storage";
+import storage, { Time } from "../storage";
 import { makeRequest } from "./fetch";
 
 type ListingSource = "bazaar" | "itemmarket";
@@ -40,6 +40,10 @@ export async function getBazaarListings(
 		// TODO: check if the code is 429
 		// If it is, kill all requests for the following minute (check how long exactly)
 
+		if (data.code === 429) {
+			// we're cooked
+		}
+
 		logger.warn("Failed to fetch bazaar data from Torn Pal.", data);
 
 		return null;
@@ -47,7 +51,7 @@ export async function getBazaarListings(
 
 	storage.set(`item-${itemId}`, data, {
 		amount: 30,
-		unit: "Seconds",
+		unit: Time.Seconds,
 	});
 
 	logger.debug(`Returned fresh data for item ${itemId}`);

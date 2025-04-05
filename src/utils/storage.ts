@@ -47,7 +47,7 @@ export class Storage {
 		value: T,
 		expireConfig?: {
 			amount: number;
-			unit: keyof typeof Time;
+			unit: Time;
 		},
 	): void {
 		try {
@@ -55,7 +55,7 @@ export class Storage {
 				value,
 				expiration: expireConfig
 					? Date.now() +
-						expireConfig.amount * (Time[expireConfig.unit] || Time.Minutes)
+						expireConfig.amount * (expireConfig.unit || Time.Minutes)
 					: null,
 			};
 			localStorage.setItem(this.prefix + key, JSON.stringify(item));
