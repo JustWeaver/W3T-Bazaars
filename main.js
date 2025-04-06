@@ -107,6 +107,47 @@
             return { wrapper, nameEl };
         }
 
+        class CacheManager {
+            static CACHE_DURATION_MS = 60000;
+            static cachedItemsData = null;
+
+            static getStoredItems() {
+                if (this.cachedItemsData === null) {
+                    try {
+                        this.cachedItemsData = JSON.parse(StorageManager.getSync("tornItems", "{}"));
+                    } catch (e) {
+                        this.cachedItemsData = {};
+                        console.error("Stored items got funky:", e);
+                    }
+                }
+                return this.cachedItemsData;
+            }
+
+            static getCache(itemId) {
+                try {
+                    const key = "tornBazaarCache_" + itemId,
+                        cached = StorageManager.getSync(key);
+                    if (cached) {
+                        const payload = JSON.parse(cached);
+                        if (Date.now() - payload.timestamp < this.CACHE_DURATION_MS) return payload.data;
+                    }
+                } catch (e) {}
+                return null;
+            }
+
+            static setCache(itemId, data) {
+                try {
+                    const key = "tornBazaarCache_" + itemId;
+                    StorageManager.set(key, JSON.stringify({ timestamp: Date.now(), data }))
+                        .catch(e => console.error(`Error caching data for item ${itemId}:`, e));
+                } catch (e) {}
+            }
+
+            static clearItemsCache() {
+                this.cachedItemsData = null;
+            }
+        }
+
         const fetchProxy = new Proxy(unsafeWindow.fetch, {
             apply: function(target, thisArg, argumentsList) {
                 const [resource, init] = argumentsList;
@@ -142,8 +183,7 @@
         
         unsafeWindow.fetch = fetchProxy;
 
-        const CACHE_DURATION_MS = 60000,
-            CARD_WIDTH = 180;
+        const CARD_WIDTH = 180;
 
         const scriptSettings = {
             sortKey: "price",
@@ -856,15 +896,17 @@
                 this.MAX_RETRIES = 3;
                 this.TIMEOUT_MS = 10000;
                 this.RETRY_DELAY_MS = 2000;
+                this.isPDA = false;
+                this.initializePDA();
             }
 
-            async isTornPDA() {
-                if (typeof window.flutter_inappwebview === 'undefined') return false;
+            async initializePDA() {
+                if (typeof window.flutter_inappwebview === 'undefined') return;
                 try {
                     const response = await window.flutter_inappwebview.callHandler('isTornPDA');
-                    return response?.isTornPDA ?? false;
+                    this.isPDA = response?.isTornPDA ?? false;
                 } catch {
-                    return false;
+                    this.isPDA = false;
                 }
             }
 
@@ -921,8 +963,7 @@
 
                 for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
                     try {
-                        const isPDA = await this.isTornPDA();
-                        const response = isPDA 
+                        const response = this.isPDA 
                             ? await this.makePDARequest(method, url, finalHeaders, finalData)
                             : await this.makeGMRequest(method, url, finalHeaders, finalData, timeout);
 
@@ -951,55 +992,31 @@
         async function fetchBazaarListings(itemId, callback) {
             try {
                 const data = await api.get(`https://tornpal.com/api/v1/markets/clist/${itemId}?comment=wBazaarMarket`);
-                const listings = data && Array.isArray(data.listings)
-                    ? data.listings.filter(l => l.source === "bazaar")
-                    : [];
-                callback(listings);
+                // Pre-filter and pre-sort the listings for better performance
+                const listings = data?.listings?.filter(l => l.source === "bazaar") || [];
+                
+                // Pre-compute display values to avoid repeated calculations
+                const processedListings = listings.map(listing => ({
+                    ...listing,
+                    displayPrice: listing.price.toLocaleString(),
+                    relativeTime: getRelativeTime(listing.updated),
+                    displayName: listing.player_name || `ID: ${listing.player_id}`
+                }));
+                
+                callback(processedListings);
             } catch (error) {
                 console.error(`Error fetching bazaar listings for item ${itemId}:`, error);
                 callback(null);
             }
         }
 
-        let cachedItemsData = null;
-        function getStoredItems() {
-            if (cachedItemsData === null) {
-                try {
-                    cachedItemsData = JSON.parse(StorageManager.getSync("tornItems", "{}"));
-                } catch (e) {
-                    cachedItemsData = {};
-                    console.error("Stored items got funky:", e);
-                }
-            }
-            return cachedItemsData;
-        }
-
-        function getCache(itemId) {
-            try {
-                const key = "tornBazaarCache_" + itemId,
-                    cached = StorageManager.getSync(key);
-                if (cached) {
-                    const payload = JSON.parse(cached);
-                    if (Date.now() - payload.timestamp < CACHE_DURATION_MS) return payload.data;
-                }
-            } catch (e) {}
-            return null;
-        }
-
-        function setCache(itemId, data) {
-            try {
-                const key = "tornBazaarCache_" + itemId;
-                StorageManager.set(key, JSON.stringify({ timestamp: Date.now(), data }))
-                    .catch(e => console.error(`Error caching data for item ${itemId}:`, e));
-            } catch (e) {}
-        }
-
         function getRelativeTime(ts) {
             const diffSec = Math.floor((Date.now() - ts * 1000) / 1000);
-            if (diffSec < 60) return diffSec + 's ago';
-            if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
-            if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h ago';
-            return Math.floor(diffSec / 86400) + 'd ago';
+            const [unit, divisor] = diffSec < 60 ? ['s', 1] :
+                                  diffSec < 3600 ? ['m', 60] :
+                                  diffSec < 86400 ? ['h', 3600] :
+                                  ['d', 86400];
+            return `${Math.floor(diffSec / divisor)}${unit} ago`;
         }
 
         const svgTemplates = {
@@ -1029,21 +1046,21 @@
                 }
             } catch (e) {}
 
-            const displayName = listing.player_name ? listing.player_name : `ID: ${listing.player_id}`;
+            // Use pre-computed values
             card.innerHTML = `
                 <div>
                     <div style="display:flex; align-items:center; gap:5px; margin-bottom:6px; flex-wrap:wrap">
-    <a href="https://www.torn.com/bazaar.php?userId=${listing.player_id}&itemId=${listing.item_id}&highlight=1&price=${listing.price}#/"
-                        data-visited-key="visited_${listing.item_id}_${listing.player_id}"
-                        data-updated="${listing.updated}"
-                        ${scriptSettings.linkBehavior === 'new_tab' ? 'target="_blank" rel="noopener noreferrer"' : ''}
-                        style="font-weight:bold; color:${visitedColor}; text-decoration:underline;">
-                        Player: ${displayName}
+                        <a href="https://www.torn.com/bazaar.php?userId=${listing.player_id}&itemId=${listing.item_id}&highlight=1&price=${listing.price}#/"
+                            data-visited-key="visited_${listing.item_id}_${listing.player_id}"
+                            data-updated="${listing.updated}"
+                            ${scriptSettings.linkBehavior === 'new_tab' ? 'target="_blank" rel="noopener noreferrer"' : ''}
+                            style="font-weight:bold; color:${visitedColor}; text-decoration:underline;">
+                            Player: ${listing.displayName}
                         </a>
                     </div>
                     <div>
                         <div style="margin-bottom:2px">
-                            <strong>Price:</strong> <span style="word-break:break-all;">$${listing.price.toLocaleString()}</span>
+                            <strong>Price:</strong> <span style="word-break:break-all;">$${listing.displayPrice}</span>
                         </div>
                         <div style="display:flex; align-items:center">
                             <strong>Qty:</strong> <span style="margin-left:4px">${listing.quantity}</span>
@@ -1052,7 +1069,7 @@
                     </div>
                 </div>
                 <div style="margin-top:6px">
-                    <div class="bazaar-listing-footnote">Updated: ${getRelativeTime(listing.updated)}</div>
+                    <div class="bazaar-listing-footnote">Updated: ${listing.relativeTime}</div>
                 </div>
             `;
 
@@ -1121,40 +1138,31 @@
 
         function getPriceComparisonHtml(listingPrice, quantity) {
             try {
-                const stored = getStoredItems();
+                const stored = CacheManager.getStoredItems();
                 const match = Object.values(stored).find(item =>
                     item.name && item.name.toLowerCase() === scriptSettings.currentItemName.toLowerCase());
-                if (match && match.market_value) {
-                    const marketValue = Number(match.market_value),
-                        priceDiff = listingPrice - marketValue,
-                        percentDiff = ((listingPrice / marketValue) - 1) * 100,
-                        listingFee = scriptSettings.listingFee || 0,
-                        totalCost = listingPrice * quantity,
-                        potentialRevenue = marketValue * quantity,
-                        feeAmount = Math.ceil(potentialRevenue * (listingFee / 100)),
-                        potentialProfit = potentialRevenue - totalCost - feeAmount,
-                        minResellPrice = Math.ceil(listingPrice / (1 - (listingFee / 100)));
-
-                    let color, text;
+                if (match?.market_value) {
+                    const marketValue = Number(match.market_value);
+                    const fee = scriptSettings.listingFee || 0;
+                    const totalCost = listingPrice * quantity;
+                    const potentialRevenue = marketValue * quantity;
+                    const feeAmount = Math.ceil(potentialRevenue * (fee / 100));
+                    const potentialProfit = potentialRevenue - totalCost - feeAmount;
+                    const percentDiff = ((listingPrice / marketValue) - 1) * 100;
+                    
                     const absProfit = Math.abs(potentialProfit);
-                    let abbrevValue = potentialProfit < 0 ? '-' : '';
-                    if (absProfit >= 1000000) {
-                        abbrevValue += '$' + (absProfit / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
-                    } else if (absProfit >= 1000) {
-                        abbrevValue += '$' + (absProfit / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-                    } else {
-                        abbrevValue += '$' + absProfit;
-                    }
-                    if (potentialProfit > 0) {
-                        color = 'var(--bazaar-profit-pos)';
-                        text = scriptSettings.displayMode === "percentage" ? `(${percentDiff.toFixed(1)}%)` : `(${abbrevValue})`;
-                    } else if (potentialProfit < 0) {
-                        color = 'var(--bazaar-profit-neg)';
-                        text = scriptSettings.displayMode === "percentage" ? `(+${percentDiff.toFixed(1)}%)` : `(${abbrevValue})`;
-                    } else {
-                        color = 'var(--bazaar-profit-neutral)';
-                        text = scriptSettings.displayMode === "percentage" ? `(0%)` : `($0)`;
-                    }
+                    const abbrevValue = potentialProfit < 0 ? '-' : '';
+                    const profitText = absProfit >= 1000000 ? '$' + (absProfit / 1000000).toFixed(1).replace(/\.0$/, '') + 'm' :
+                                     absProfit >= 1000 ? '$' + (absProfit / 1000).toFixed(1).replace(/\.0$/, '') + 'k' :
+                                     '$' + absProfit;
+
+                    const color = potentialProfit > 0 ? 'var(--bazaar-profit-pos)' :
+                                potentialProfit < 0 ? 'var(--bazaar-profit-neg)' :
+                                'var(--bazaar-profit-neutral)';
+                    
+                    const text = scriptSettings.displayMode === "percentage" ? 
+                        `(${potentialProfit > 0 ? '' : '+'}${percentDiff.toFixed(1)}%)` : 
+                        `(${abbrevValue}${profitText})`;
 
                     const tooltipContent = `
                         <div style="font-weight:bold; font-size:13px; margin-bottom:6px; text-align:center;">
@@ -1162,17 +1170,12 @@
                         </div>
                         <hr style="margin: 4px 0; border-color: var(--bazaar-tooltip-hr-color)">
                         <div>Total Cost: $${totalCost.toLocaleString()} (${quantity} item${quantity > 1 ? 's' : ''})</div>
-                        ${listingFee > 0 ? `<div>Resale Fee: ${listingFee}% ($${feeAmount.toLocaleString()})</div>` : ''}
-                        ${listingFee > 0 ? `<div style="margin-top:6px; font-weight:bold;">Min. Resell Price: $${minResellPrice.toLocaleString()}</div>` : ''}
+                        ${fee > 0 ? `<div>Resale Fee: ${fee}% ($${feeAmount.toLocaleString()})</div>` : ''}
+                        ${fee > 0 ? `<div style="margin-top:6px; font-weight:bold;">Min. Resell Price: $${Math.ceil(listingPrice / (1 - (fee / 100))).toLocaleString()}</div>` : ''}
                     `;
+
                     const span = document.createElement('span');
-                    span.style.fontWeight = 'bold';
-                    span.style.fontSize = '10px';
-                    span.style.padding = '0 4px';
-                    span.style.borderRadius = '2px';
-                    span.style.color = color;
-                    span.style.cursor = 'help';
-                    span.style.whiteSpace = 'nowrap';
+                    span.style.cssText = 'font-weight:bold; font-size:10px; padding:0 4px; border-radius:2px; color:' + color + '; cursor:help; white-space:nowrap;';
                     span.textContent = text;
                     span.className = 'bazaar-price-comparison';
                     span.setAttribute('data-tooltip', tooltipContent);
@@ -1313,7 +1316,7 @@
             header.className = 'bazaar-info-header';
             let marketValueText = "";
             try {
-                const stored = getStoredItems();
+                const stored = CacheManager.getStoredItems();
                 const match = Object.values(stored).find(item =>
                     item.name && item.name.toLowerCase() === itemName.toLowerCase());
                 if (match && match.market_value) {
@@ -1447,7 +1450,7 @@
                 let diff;
                 if (scriptSettings.sortKey === "profit") {
                     try {
-                        const stored = getStoredItems();
+                        const stored = CacheManager.getStoredItems();
                         const match = Object.values(stored).find(item =>
                             item.name && item.name.toLowerCase() === scriptSettings.currentItemName.toLowerCase());
                         if (match && match.market_value) {
@@ -1528,7 +1531,7 @@
             if (cardContainer) {
                 cardContainer.innerHTML = '<div style="padding:10px; text-align:center; width:100%;">Loading bazaar listings...</div>';
             }
-            const cachedData = getCache(itemId);
+            const cachedData = CacheManager.getCache(itemId);
             if (cachedData) {
                 scriptSettings.allListings = sortListings(cachedData.listings);
                 if (scriptSettings.allListings.length === 0) {
@@ -1556,12 +1559,20 @@
                 responses++;
                 if (responses === 1) {
                     clearTimeout(requestTimeout);
-                    setCache(itemId, { listings });
+                    
+                    // Cache the processed listings
+                    CacheManager.setCache(itemId, { listings });
+                    
                     if (listings.length === 0) {
                         showEmptyState(apiErrors);
                     } else {
+                        // Sort listings and update UI in a single operation
                         scriptSettings.allListings = sortListings(listings);
-                        renderVirtualCards(infoContainer);
+                        
+                        // Use requestAnimationFrame for smoother rendering
+                        requestAnimationFrame(() => {
+                            renderVirtualCards(infoContainer);
+                        });
                     }
                 }
             }
@@ -1718,7 +1729,7 @@
                         if (!scriptSettings.allListings || scriptSettings.allListings.length === 0) {
                             const itemId = container.getAttribute('data-itemid');
                             if (itemId) {
-                                const cachedData = getCache(itemId);
+                                const cachedData = CacheManager.getCache(itemId);
                                 if (cachedData && cachedData.listings && cachedData.listings.length > 0) {
                                     scriptSettings.allListings = sortListings(cachedData.listings);
                                 }
@@ -2017,7 +2028,7 @@
                         throw new Error(data.error ? data.error.error : 'Failed to fetch market values');
                     }
 
-                    cachedItemsData = null;
+                    CacheManager.clearItemsCache();
 
                     const filtered = {};
                     for (let [id, item] of Object.entries(data.items)) {
