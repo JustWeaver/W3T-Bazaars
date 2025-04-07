@@ -81,7 +81,9 @@
             }
         }
 
-        window.unsafeWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        // Safely handle unsafeWindow, particularly for TornPDA
+        const globalWindow = window;
+        const safeWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         let currentItemID = null;
 
         function findMarketElements() {
@@ -148,40 +150,45 @@
             }
         }
 
-        const fetchProxy = new Proxy(unsafeWindow.fetch, {
-            apply: function(target, thisArg, argumentsList) {
-                const [resource, init] = argumentsList;
-                const url = typeof resource === 'string' ? resource : resource.url;
-                const fetchPromise = target.apply(thisArg, argumentsList);
-                
-                if (window.location.href.includes('page.php?sid=ItemMarket') && 
-                    url && url.includes('page.php?sid=iMarket&step=getListing')) {
+        // Use a try-catch to handle potential errors more gracefully
+        try {
+            const fetchProxy = new Proxy(safeWindow.fetch, {
+                apply: function(target, thisArg, argumentsList) {
+                    const [resource, init] = argumentsList;
+                    const url = typeof resource === 'string' ? resource : resource.url;
+                    const fetchPromise = target.apply(thisArg, argumentsList);
                     
-                    const id = init?.body instanceof FormData ? init.body.get('itemID') : null;
-                    
-                    if (id) {
-                        currentItemID = id;
+                    if (window.location.href.includes('page.php?sid=ItemMarket') && 
+                        url && url.includes('page.php?sid=iMarket&step=getListing')) {
                         
-                        const observer = new MutationObserver(() => {
-                            const { wrapper, nameEl } = findMarketElements();
-                            if (wrapper && !wrapper.querySelector('.bazaar-info-container')) {
-                                updateInfoContainer(wrapper, id, nameEl ? nameEl.textContent.trim() : `Item #${id}`);
-                                observer.disconnect();
+                        const id = init?.body instanceof FormData ? init.body.get('itemID') : null;
+                        
+                        if (id) {
+                            currentItemID = id;
+                            
+                            const observer = new MutationObserver(() => {
+                                const { wrapper, nameEl } = findMarketElements();
+                                if (wrapper && !wrapper.querySelector('.bazaar-info-container')) {
+                                    updateInfoContainer(wrapper, id, nameEl ? nameEl.textContent.trim() : `Item #${id}`);
+                                    observer.disconnect();
+                                }
+                            });
+                            
+                            const marketWrapper = document.querySelector('.marketWrapper___S5pRm, [class*="marketWrapper"]');
+                            if (marketWrapper) {
+                                observer.observe(marketWrapper, { childList: true, subtree: true });
                             }
-                        });
-                        
-                        const marketWrapper = document.querySelector('.marketWrapper___S5pRm, [class*="marketWrapper"]');
-                        if (marketWrapper) {
-                            observer.observe(marketWrapper, { childList: true, subtree: true });
                         }
                     }
+                    
+                    return fetchPromise;
                 }
-                
-                return fetchPromise;
-            }
-        });
-        
-        unsafeWindow.fetch = fetchProxy;
+            });
+            
+            safeWindow.fetch = fetchProxy;
+        } catch (error) {
+            console.warn("Failed to proxy fetch, some functionality might be limited:", error);
+        }
 
         const CARD_WIDTH = 180;
 
@@ -914,42 +921,109 @@
                 if (typeof window.flutter_inappwebview === 'undefined') {
                     throw new Error('PDA API not available');
                 }
-                return window.flutter_inappwebview.callHandler(
-                    method === 'POST' ? 'PDA_httpPost' : 'PDA_httpGet',
-                    url,
-                    headers,
-                    data
-                );
+                try {
+                    return window.flutter_inappwebview.callHandler(
+                        method === 'POST' ? 'PDA_httpPost' : 'PDA_httpGet',
+                        url,
+                        headers,
+                        data
+                    );
+                } catch (error) {
+                    console.warn("PDA request failed, falling back to fetch:", error);
+                    return this.makeFetchRequest(method, url, headers, data);
+                }
+            }
+
+            async makeFetchRequest(method, url, headers = {}, data) {
+                const options = {
+                    method: method,
+                    headers: headers,
+                    mode: 'cors',
+                    cache: 'no-cache',
+                };
+
+                if (data && method !== 'GET') {
+                    options.body = data;
+                }
+
+                // Create abort controller to handle timeouts
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
+                options.signal = controller.signal;
+
+                try {
+                    const response = await fetch(url, options);
+                    clearTimeout(timeoutId);
+                    
+                    // Format response to match GM.xmlHttpRequest format
+                    return {
+                        status: response.status,
+                        responseText: await response.text(),
+                        finalUrl: url
+                    };
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    throw error;
+                }
             }
 
             async makeGMRequest(method, url, headers, data, timeout) {
-                if (typeof GM === 'undefined' || typeof GM.xmlHttpRequest === 'undefined') {
-                    throw new Error('GM.xmlHttpRequest API not available');
-                }
+                // First check if GM.xmlHttpRequest is available
+                if (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function') {
+                    return new Promise((resolve, reject) => {
+                        const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
 
-                return new Promise((resolve, reject) => {
-                    const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
-
-                    GM.xmlHttpRequest({
-                        method,
-                        url,
-                        data,
-                        headers,
-                        timeout,
-                        onload: res => {
-                            clearTimeout(timeoutId);
-                            resolve(res);
-                        },
-                        onerror: error => {
-                            clearTimeout(timeoutId);
-                            reject(error);
-                        },
-                        ontimeout: () => {
-                            clearTimeout(timeoutId);
-                            reject(new Error('Request timed out'));
-                        }
+                        GM.xmlHttpRequest({
+                            method,
+                            url,
+                            data,
+                            headers,
+                            timeout,
+                            onload: res => {
+                                clearTimeout(timeoutId);
+                                resolve(res);
+                            },
+                            onerror: error => {
+                                clearTimeout(timeoutId);
+                                reject(error);
+                            },
+                            ontimeout: () => {
+                                clearTimeout(timeoutId);
+                                reject(new Error('Request timed out'));
+                            }
+                        });
                     });
-                });
+                } 
+                
+                // Check if GM_xmlhttpRequest is available (older Tampermonkey/Greasemonkey)
+                else if (typeof GM_xmlhttpRequest === 'function') {
+                    return new Promise((resolve, reject) => {
+                        const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
+
+                        GM_xmlhttpRequest({
+                            method,
+                            url,
+                            data,
+                            headers,
+                            timeout,
+                            onload: res => {
+                                clearTimeout(timeoutId);
+                                resolve(res);
+                            },
+                            onerror: error => {
+                                clearTimeout(timeoutId);
+                                reject(error);
+                            },
+                            ontimeout: () => {
+                                clearTimeout(timeoutId);
+                                reject(new Error('Request timed out'));
+                            }
+                        });
+                    });
+                }
+                
+                // Fall back to fetch if neither GM method is available
+                return this.makeFetchRequest(method, url, headers, data);
             }
 
             async makeRequest(options) {
@@ -972,6 +1046,7 @@
                         }
                         throw new Error(`Request failed with status ${response.status}`);
                     } catch (error) {
+                        console.warn(`API request attempt ${attempt + 1} failed:`, error);
                         if (attempt === this.MAX_RETRIES) throw error;
                         await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY_MS));
                     }
