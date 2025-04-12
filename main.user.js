@@ -93,7 +93,7 @@
             if (isMobile) {
 
                 wrapper = document.querySelector('ul.sellerList___e4C9_, ul[class*="sellerList"]');
-                
+
                 // Simple name selector that just works todd howard meme
                 nameEl = document.querySelector('.itemName___tuYnr, .title___ruNCT');
             } else {
@@ -157,15 +157,15 @@
                     const [resource, init] = argumentsList;
                     const url = typeof resource === 'string' ? resource : resource.url;
                     const fetchPromise = target.apply(thisArg, argumentsList);
-                    
-                    if (window.location.href.includes('page.php?sid=ItemMarket') && 
+
+                    if (window.location.href.includes('page.php?sid=ItemMarket') &&
                         url && url.includes('page.php?sid=iMarket&step=getListing')) {
-                        
+
                         const id = init?.body instanceof FormData ? init.body.get('itemID') : null;
-                        
+
                         if (id) {
                             currentItemID = id;
-                            
+
                             const observer = new MutationObserver(() => {
                                 const { wrapper, nameEl } = findMarketElements();
                                 if (wrapper && !wrapper.querySelector('.bazaar-info-container')) {
@@ -173,18 +173,18 @@
                                     observer.disconnect();
                                 }
                             });
-                            
+
                             const marketWrapper = document.querySelector('.marketWrapper___S5pRm, [class*="marketWrapper"]');
                             if (marketWrapper) {
                                 observer.observe(marketWrapper, { childList: true, subtree: true });
                             }
                         }
                     }
-                    
+
                     return fetchPromise;
                 }
             });
-            
+
             safeWindow.fetch = fetchProxy;
         } catch (error) {
             console.warn("Failed to proxy fetch, some functionality might be limited:", error);
@@ -954,7 +954,7 @@
                 try {
                     const response = await fetch(url, options);
                     clearTimeout(timeoutId);
-                    
+
                     // Format response to match GM.xmlHttpRequest format
                     return {
                         status: response.status,
@@ -993,8 +993,8 @@
                             }
                         });
                     });
-                } 
-                
+                }
+
                 // Check if GM_xmlhttpRequest is available (older Tampermonkey/Greasemonkey)
                 else if (typeof GM_xmlhttpRequest === 'function') {
                     return new Promise((resolve, reject) => {
@@ -1021,7 +1021,7 @@
                         });
                     });
                 }
-                
+
                 // Fall back to fetch if neither GM method is available
                 return this.makeFetchRequest(method, url, headers, data);
             }
@@ -1037,7 +1037,7 @@
 
                 for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
                     try {
-                        const response = this.isPDA 
+                        const response = this.isPDA
                             ? await this.makePDARequest(method, url, finalHeaders, finalData)
                             : await this.makeGMRequest(method, url, finalHeaders, finalData, timeout);
 
@@ -1069,7 +1069,7 @@
                 const data = await api.get(`https://tornpal.com/api/v1/markets/clist/${itemId}?comment=wBazaarMarket`);
                 // Pre-filter and pre-sort the listings for better performance
                 const listings = data?.listings?.filter(l => l.source === "bazaar") || [];
-                
+
                 // Pre-compute display values to avoid repeated calculations
                 const processedListings = listings.map(listing => ({
                     ...listing,
@@ -1077,7 +1077,7 @@
                     relativeTime: getRelativeTime(listing.updated),
                     displayName: listing.player_name || `ID: ${listing.player_id}`
                 }));
-                
+
                 callback(processedListings);
             } catch (error) {
                 console.error(`Error fetching bazaar listings for item ${itemId}:`, error);
@@ -1224,7 +1224,7 @@
                     const feeAmount = Math.ceil(potentialRevenue * (fee / 100));
                     const potentialProfit = potentialRevenue - totalCost - feeAmount;
                     const percentDiff = ((listingPrice / marketValue) - 1) * 100;
-                    
+
                     const absProfit = Math.abs(potentialProfit);
                     const abbrevValue = potentialProfit < 0 ? '-' : '';
                     const profitText = absProfit >= 1000000 ? '$' + (absProfit / 1000000).toFixed(1).replace(/\.0$/, '') + 'm' :
@@ -1234,9 +1234,9 @@
                     const color = potentialProfit > 0 ? 'var(--bazaar-profit-pos)' :
                                 potentialProfit < 0 ? 'var(--bazaar-profit-neg)' :
                                 'var(--bazaar-profit-neutral)';
-                    
-                    const text = scriptSettings.displayMode === "percentage" ? 
-                        `(${potentialProfit > 0 ? '' : '+'}${percentDiff.toFixed(1)}%)` : 
+
+                    const text = scriptSettings.displayMode === "percentage" ?
+                        `(${potentialProfit > 0 ? '' : '+'}${percentDiff.toFixed(1)}%)` :
                         `(${abbrevValue}${profitText})`;
 
                     const tooltipContent = `
@@ -1305,10 +1305,10 @@
 
                 const scrollLeft = scrollWrapper.scrollLeft;
                 const containerWidth = scrollWrapper.clientWidth;
-                
+
                 const visibleCards = Math.ceil(containerWidth / CARD_WIDTH);
                 const buffer = Math.max(5, Math.floor(visibleCards));
-                
+
                 let startIndex = Math.max(0, Math.floor(scrollLeft / CARD_WIDTH) - buffer);
                 let endIndex = Math.min(filteredListings.length, Math.ceil((scrollLeft + containerWidth) / CARD_WIDTH) + buffer);
 
@@ -1320,24 +1320,24 @@
                 }
 
                 const cardsToRemove = [];
-                
+
                 const existingCards = cardContainer.querySelectorAll('.bazaar-listing-card');
                 existingCards.forEach(card => {
                     const key = card.dataset.listingKey;
                     if (key in visibleCardMap) {
                         const newIndex = visibleCardMap[key];
                         const newLeft = newIndex * CARD_WIDTH;
-                        
+
                         if (parseFloat(card.style.left) !== newLeft) {
                             card.style.left = newLeft + "px";
                         }
-                        
+
                         delete visibleCardMap[key];
                     } else {
                         cardsToRemove.push(card);
                     }
                 });
-                
+
                 cardsToRemove.forEach(card => {
                     card.classList.add('fade-out');
                     const removeCard = () => {
@@ -1348,7 +1348,7 @@
                     card.addEventListener('transitionend', removeCard, { once: true });
                     setTimeout(removeCard, 500);
                 });
-                
+
                 if (Object.keys(visibleCardMap).length > 0) {
                     const fragment = document.createDocumentFragment();
                     for (const key in visibleCardMap) {
@@ -1358,9 +1358,9 @@
                         newCard.classList.add('fade-in');
                         fragment.appendChild(newCard);
                     }
-                    
+
                     cardContainer.appendChild(fragment);
-                    
+
                     requestAnimationFrame(() => {
                         cardContainer.querySelectorAll('.fade-in').forEach(card => {
                             card.classList.remove('fade-in');
@@ -1634,16 +1634,16 @@
                 responses++;
                 if (responses === 1) {
                     clearTimeout(requestTimeout);
-                    
+
                     // Cache the processed listings
                     CacheManager.setCache(itemId, { listings });
-                    
+
                     if (listings.length === 0) {
                         showEmptyState(apiErrors);
                     } else {
                         // Sort listings and update UI in a single operation
                         scriptSettings.allListings = sortListings(listings);
-                        
+
                         // Use requestAnimationFrame for smoother rendering
                         requestAnimationFrame(() => {
                             renderVirtualCards(infoContainer);
@@ -1678,24 +1678,26 @@
                     const img = document.querySelector(`img[src*="/images/items/${targetItemId}/"]`);
                     if (!img) return null;
 
+                    const card = img.closest('.item___GYCYJ');
+                    if (!card) return null;
+
                     if (priceParam) {
-                        const allCards = document.querySelectorAll(`[class*=item_]`);
-                        for (const card of allCards) {
-                            if (card.querySelector(`img[src*="/images/items/${targetItemId}/"]`)) {
-                                const priceElement = card.querySelector('[class*=price_]');
-                                if (priceElement) {
-                                    const priceText = priceElement.textContent.trim();
-                                    const cleanPrice = priceText.replace(/[$,]/g, '');
-                                    if (cleanPrice == priceParam) {
-                                        return card;
-                                    }
-                                }
+                        const priceElement = card.querySelector('[class*=price_]');
+                        if (priceElement) {
+                            const priceText = priceElement.textContent.trim();
+                            const cleanPrice = priceText.replace(/[$,]/g, '');
+                            const urlPrice = parseInt(priceParam);
+                            const currentPrice = parseInt(cleanPrice);
+                            
+                            if (currentPrice !== urlPrice) {
+                                const diff = currentPrice - urlPrice;
+                                const direction = diff > 0 ? 'above' : 'below';
+                                alert(`WARNING: Price is $${Math.abs(diff).toLocaleString()} ${direction} the API pricing!`);
                             }
                         }
-                        return null;
                     }
 
-                    return img ? img.closest('.item___GYCYJ') : null;
+                    return card;
                 }
                 const scrollInterval = setInterval(() => {
                     const card = findItemCard();
@@ -1854,7 +1856,7 @@
         function addSettingsMenuItem() {
             const menu = document.querySelector('.settings-menu');
             if (!menu || document.querySelector('.bazaar-settings-button')) return;
-            
+
             const li = document.createElement('li');
             li.className = 'link bazaar-settings-button';
             const a = document.createElement('a');
@@ -2026,7 +2028,7 @@
             });
             modal.querySelector('.bazaar-settings-save').addEventListener('click', async () => {
                 const oldLinkBehavior = scriptSettings.linkBehavior;
-                
+
                 scriptSettings.apiKey = modal.querySelector('#bazaar-api-key').value.trim();
                 scriptSettings.sortKey = modal.querySelector('#bazaar-default-sort').value;
                 scriptSettings.sortOrder = modal.querySelector('#bazaar-default-order').value;
