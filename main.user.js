@@ -968,7 +968,8 @@
                         const response = await new Promise((resolve, reject) => {
                             const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
 
-                            GM.xmlHttpRequest({
+                            // Try different GM_xmlHttpRequest implementations
+                            const requestOptions = {
                                 method,
                                 url,
                                 data: finalData,
@@ -986,11 +987,44 @@
                                     clearTimeout(timeoutId);
                                     reject(new Error('Request timed out'));
                                 }
-                            });
+                            };
+
+                            // Try different GM_xmlHttpRequest implementations
+                            if (typeof GM_xmlHttpRequest !== 'undefined') {
+                                GM_xmlHttpRequest(requestOptions);
+                            } else if (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function') {
+                                GM.xmlHttpRequest(requestOptions);
+                            } else if (typeof unsafeWindow !== 'undefined' && typeof unsafeWindow.GM_xmlHttpRequest !== 'undefined') {
+                                unsafeWindow.GM_xmlHttpRequest(requestOptions);
+                            } else {
+                                // Fallback to fetch if GM_xmlHttpRequest is not available
+                                fetch(url, {
+                                    method,
+                                    headers: finalHeaders,
+                                    body: finalData,
+                                    credentials: 'include'
+                                })
+                                .then(async response => {
+                                    const text = await response.text();
+                                    resolve({
+                                        status: response.status,
+                                        responseText: text,
+                                        response: text
+                                    });
+                                })
+                                .catch(error => {
+                                    reject(error);
+                                });
+                            }
                         });
 
                         if (response.status >= 200 && response.status < 300) {
-                            return JSON.parse(response.responseText);
+                            try {
+                                return JSON.parse(response.responseText);
+                            } catch (e) {
+                                console.error("Failed to parse response:", e);
+                                return response.responseText;
+                            }
                         }
                         throw new Error(`Request failed with status ${response.status}`);
                     } catch (error) {
