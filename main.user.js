@@ -933,6 +933,19 @@
                 this.MAX_RETRIES = 3;
                 this.TIMEOUT_MS = 10000;
                 this.RETRY_DELAY_MS = 2000;
+                this.isPDA = false;
+                this.initializePDA();
+            }
+
+            async initializePDA() {
+                try {
+                    if (window.flutter_inappwebview) {
+                        const response = await window.flutter_inappwebview.callHandler('isTornPDA');
+                        this.isPDA = response.isTornPDA;
+                    }
+                } catch (error) {
+                    console.warn("Failed to check if running in Torn PDA:", error);
+                }
             }
 
             getRfcVToken() {
@@ -965,66 +978,44 @@
 
                 for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
                     try {
-                        const response = await new Promise((resolve, reject) => {
-                            const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
-
-                            // Try different GM_xmlHttpRequest implementations
-                            const requestOptions = {
-                                method,
-                                url,
-                                data: finalData,
-                                headers: finalHeaders,
-                                timeout,
-                                onload: res => {
-                                    clearTimeout(timeoutId);
-                                    resolve(res);
-                                },
-                                onerror: error => {
-                                    clearTimeout(timeoutId);
-                                    reject(error);
-                                },
-                                ontimeout: () => {
-                                    clearTimeout(timeoutId);
-                                    reject(new Error('Request timed out'));
-                                }
-                            };
-
-                            // Try different GM_xmlHttpRequest implementations
-                            if (typeof GM_xmlHttpRequest !== 'undefined') {
-                                GM_xmlHttpRequest(requestOptions);
-                            } else if (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function') {
-                                GM.xmlHttpRequest(requestOptions);
-                            } else if (typeof unsafeWindow !== 'undefined' && typeof unsafeWindow.GM_xmlHttpRequest !== 'undefined') {
-                                unsafeWindow.GM_xmlHttpRequest(requestOptions);
-                            } else {
-                                // Fallback to fetch if GM_xmlHttpRequest is not available
-                                fetch(url, {
-                                    method,
-                                    headers: finalHeaders,
-                                    body: finalData,
-                                    credentials: 'include'
-                                })
-                                .then(async response => {
-                                    const text = await response.text();
-                                    resolve({
-                                        status: response.status,
-                                        responseText: text,
-                                        response: text
-                                    });
-                                })
-                                .catch(error => {
-                                    reject(error);
-                                });
+                        let response;
+                        
+                        if (this.isPDA) {
+                            // Use PDA's native handlers
+                            if (method === 'GET') {
+                                response = await window.flutter_inappwebview.callHandler('PDA_httpGet', url, finalHeaders);
+                            } else if (method === 'POST') {
+                                response = await window.flutter_inappwebview.callHandler('PDA_httpPost', url, finalHeaders, finalData);
                             }
-                        });
+                        } else {
+                            // Use GM.xmlHttpRequest
+                            response = await new Promise((resolve, reject) => {
+                                const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
+
+                                GM.xmlHttpRequest({
+                                    method,
+                                    url,
+                                    data: finalData,
+                                    headers: finalHeaders,
+                                    timeout,
+                                    onload: res => {
+                                        clearTimeout(timeoutId);
+                                        resolve(res);
+                                    },
+                                    onerror: error => {
+                                        clearTimeout(timeoutId);
+                                        reject(error);
+                                    },
+                                    ontimeout: () => {
+                                        clearTimeout(timeoutId);
+                                        reject(new Error('Request timed out'));
+                                    }
+                                });
+                            });
+                        }
 
                         if (response.status >= 200 && response.status < 300) {
-                            try {
-                                return JSON.parse(response.responseText);
-                            } catch (e) {
-                                console.error("Failed to parse response:", e);
-                                return response.responseText;
-                            }
+                            return JSON.parse(response.responseText);
                         }
                         throw new Error(`Request failed with status ${response.status}`);
                     } catch (error) {
