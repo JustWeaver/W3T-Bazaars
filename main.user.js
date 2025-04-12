@@ -127,22 +127,43 @@
 
             static getCache(itemId) {
                 try {
-                    const key = "tornBazaarCache_" + itemId,
-                        cached = StorageManager.getSync(key);
+                    const key = "tornBazaarCache_" + itemId;
+                    const cached = StorageManager.getSync(key);
                     if (cached) {
                         const payload = JSON.parse(cached);
-                        if (Date.now() - payload.timestamp < this.CACHE_DURATION_MS) return payload.data;
+                        if (Date.now() - payload.timestamp < this.CACHE_DURATION_MS) {
+                            return payload.data;
+                        } else {
+                            // Cache expired, remove it
+                            this.clearItemCache(itemId);
+                        }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.error("Cache retrieval error:", e);
+                }
                 return null;
             }
 
             static setCache(itemId, data) {
                 try {
                     const key = "tornBazaarCache_" + itemId;
-                    StorageManager.set(key, JSON.stringify({ timestamp: Date.now(), data }))
-                        .catch(e => console.error(`Error caching data for item ${itemId}:`, e));
-                } catch (e) {}
+                    StorageManager.set(key, JSON.stringify({ 
+                        timestamp: Date.now(), 
+                        data,
+                        itemId // Store itemId in cache for validation
+                    })).catch(e => console.error(`Error caching data for item ${itemId}:`, e));
+                } catch (e) {
+                    console.error("Cache setting error:", e);
+                }
+            }
+
+            static clearItemCache(itemId) {
+                try {
+                    const key = "tornBazaarCache_" + itemId;
+                    StorageManager.delete(key);
+                } catch (e) {
+                    console.error("Cache clearing error:", e);
+                }
             }
 
             static clearItemsCache() {
@@ -164,6 +185,15 @@
                         const id = init?.body instanceof FormData ? init.body.get('itemID') : null;
 
                         if (id) {
+                            // Clear old data when switching items
+                            if (currentItemID && currentItemID !== id) {
+                                scriptSettings.allListings = [];
+                                const oldContainer = document.querySelector(`.bazaar-info-container[data-itemid="${currentItemID}"]`);
+                                if (oldContainer) {
+                                    oldContainer.remove();
+                                }
+                            }
+                            
                             currentItemID = id;
 
                             const observer = new MutationObserver(() => {
@@ -908,122 +938,28 @@
             }
 
             async initializePDA() {
-                if (typeof window.flutter_inappwebview === 'undefined') return;
                 try {
-                    const response = await window.flutter_inappwebview.callHandler('isTornPDA');
-                    this.isPDA = response?.isTornPDA ?? false;
-                } catch {
-                    this.isPDA = false;
-                }
-            }
-
-            async makePDARequest(method, url, headers, data) {
-                if (typeof window.flutter_inappwebview === 'undefined') {
-                    throw new Error('PDA API not available');
-                }
-                try {
-                    return window.flutter_inappwebview.callHandler(
-                        method === 'POST' ? 'PDA_httpPost' : 'PDA_httpGet',
-                        url,
-                        headers,
-                        data
-                    );
+                    if (window.flutter_inappwebview) {
+                        const response = await window.flutter_inappwebview.callHandler('isTornPDA');
+                        this.isPDA = response.isTornPDA;
+                    }
                 } catch (error) {
-                    console.warn("PDA request failed, falling back to fetch:", error);
-                    return this.makeFetchRequest(method, url, headers, data);
+                    console.warn("Failed to check if running in Torn PDA:", error);
                 }
             }
 
-            async makeFetchRequest(method, url, headers = {}, data) {
-                const options = {
-                    method: method,
-                    headers: headers,
-                    mode: 'cors',
-                    cache: 'no-cache',
-                };
+            getRfcVToken() {
+                const cookieString = document.cookie;
+                const cookieArray = cookieString.split('; ');
 
-                if (data && method !== 'GET') {
-                    options.body = data;
+                for (const cookie of cookieArray) {
+                    const [cookieName, cookieValue] = cookie.split('=');
+                    if (cookieName === 'rfc_v') {
+                        return cookieValue;
+                    }
                 }
 
-                // Create abort controller to handle timeouts
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
-                options.signal = controller.signal;
-
-                try {
-                    const response = await fetch(url, options);
-                    clearTimeout(timeoutId);
-
-                    // Format response to match GM.xmlHttpRequest format
-                    return {
-                        status: response.status,
-                        responseText: await response.text(),
-                        finalUrl: url
-                    };
-                } catch (error) {
-                    clearTimeout(timeoutId);
-                    throw error;
-                }
-            }
-
-            async makeGMRequest(method, url, headers, data, timeout) {
-                // First check if GM.xmlHttpRequest is available
-                if (typeof GM !== 'undefined' && typeof GM.xmlHttpRequest === 'function') {
-                    return new Promise((resolve, reject) => {
-                        const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
-
-                        GM.xmlHttpRequest({
-                            method,
-                            url,
-                            data,
-                            headers,
-                            timeout,
-                            onload: res => {
-                                clearTimeout(timeoutId);
-                                resolve(res);
-                            },
-                            onerror: error => {
-                                clearTimeout(timeoutId);
-                                reject(error);
-                            },
-                            ontimeout: () => {
-                                clearTimeout(timeoutId);
-                                reject(new Error('Request timed out'));
-                            }
-                        });
-                    });
-                }
-
-                // Check if GM_xmlhttpRequest is available (older Tampermonkey/Greasemonkey)
-                else if (typeof GM_xmlhttpRequest === 'function') {
-                    return new Promise((resolve, reject) => {
-                        const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
-
-                        GM_xmlhttpRequest({
-                            method,
-                            url,
-                            data,
-                            headers,
-                            timeout,
-                            onload: res => {
-                                clearTimeout(timeoutId);
-                                resolve(res);
-                            },
-                            onerror: error => {
-                                clearTimeout(timeoutId);
-                                reject(error);
-                            },
-                            ontimeout: () => {
-                                clearTimeout(timeoutId);
-                                reject(new Error('Request timed out'));
-                            }
-                        });
-                    });
-                }
-
-                // Fall back to fetch if neither GM method is available
-                return this.makeFetchRequest(method, url, headers, data);
+                return null;
             }
 
             async makeRequest(options) {
@@ -1035,11 +971,48 @@
                 const finalHeaders = { ...defaultHeaders, ...headers };
                 const finalData = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
 
+                const rfcVToken = this.getRfcVToken();
+                if (rfcVToken) {
+                    finalHeaders['Cookie'] = `rfc_v=${rfcVToken}`;
+                }
+
                 for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
                     try {
-                        const response = this.isPDA
-                            ? await this.makePDARequest(method, url, finalHeaders, finalData)
-                            : await this.makeGMRequest(method, url, finalHeaders, finalData, timeout);
+                        let response;
+                        
+                        if (this.isPDA) {
+                            // Use PDA's native handlers
+                            if (method === 'GET') {
+                                response = await window.flutter_inappwebview.callHandler('PDA_httpGet', url, finalHeaders);
+                            } else if (method === 'POST') {
+                                response = await window.flutter_inappwebview.callHandler('PDA_httpPost', url, finalHeaders, finalData);
+                            }
+                        } else {
+                            // Use GM.xmlHttpRequest
+                            response = await new Promise((resolve, reject) => {
+                                const timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeout);
+
+                                GM.xmlHttpRequest({
+                                    method,
+                                    url,
+                                    data: finalData,
+                                    headers: finalHeaders,
+                                    timeout,
+                                    onload: res => {
+                                        clearTimeout(timeoutId);
+                                        resolve(res);
+                                    },
+                                    onerror: error => {
+                                        clearTimeout(timeoutId);
+                                        reject(error);
+                                    },
+                                    ontimeout: () => {
+                                        clearTimeout(timeoutId);
+                                        reject(new Error('Request timed out'));
+                                    }
+                                });
+                            });
+                        }
 
                         if (response.status >= 200 && response.status < 300) {
                             return JSON.parse(response.responseText);
@@ -1067,10 +1040,7 @@
         async function fetchBazaarListings(itemId, callback) {
             try {
                 const data = await api.get(`https://tornpal.com/api/v1/markets/clist/${itemId}?comment=wBazaarMarket`);
-                // Pre-filter and pre-sort the listings for better performance
                 const listings = data?.listings?.filter(l => l.source === "bazaar") || [];
-
-                // Pre-compute display values to avoid repeated calculations
                 const processedListings = listings.map(listing => ({
                     ...listing,
                     displayPrice: listing.price.toLocaleString(),
@@ -1121,7 +1091,6 @@
                 }
             } catch (e) {}
 
-            // Use pre-computed values
             card.innerHTML = `
                 <div>
                     <div style="display:flex; align-items:center; gap:5px; margin-bottom:6px; flex-wrap:wrap">
@@ -1551,23 +1520,31 @@
         }
 
         function updateInfoContainer(wrapper, itemId, itemName) {
-            if (wrapper.hasAttribute('data-has-bazaar-info')) return;
-
+            // Remove the data-has-bazaar-info attribute to allow updates
+            wrapper.removeAttribute('data-has-bazaar-info');
+            
+            // Clear any existing listings
+            scriptSettings.allListings = [];
+            
             let infoContainer = document.querySelector(`.bazaar-info-container[data-itemid="${itemId}"]`);
             if (!infoContainer) {
                 infoContainer = createInfoContainer(itemName, itemId);
                 wrapper.insertBefore(infoContainer, wrapper.firstChild);
-                wrapper.setAttribute('data-has-bazaar-info', 'true');
             } else if (!wrapper.contains(infoContainer)) {
                 infoContainer = createInfoContainer(itemName, itemId);
                 wrapper.insertBefore(infoContainer, wrapper.firstChild);
-                wrapper.setAttribute('data-has-bazaar-info', 'true');
             } else {
                 const header = infoContainer.querySelector('.bazaar-info-header');
                 if (header) {
                     header.textContent = `Bazaar Listings for ${itemName} (ID: ${itemId})`;
                 }
             }
+            
+            // Set the item ID on the container
+            infoContainer.dataset.itemid = itemId;
+            
+            // Mark that we've added the info container
+            wrapper.setAttribute('data-has-bazaar-info', 'true');
 
             const cardContainer = infoContainer.querySelector('.bazaar-card-container');
             const countElement = infoContainer.querySelector('.bazaar-listings-count');
