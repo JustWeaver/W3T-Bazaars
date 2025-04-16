@@ -147,8 +147,8 @@
             static setCache(itemId, data) {
                 try {
                     const key = "tornBazaarCache_" + itemId;
-                    StorageManager.set(key, JSON.stringify({ 
-                        timestamp: Date.now(), 
+                    StorageManager.set(key, JSON.stringify({
+                        timestamp: Date.now(),
                         data,
                         itemId // Store itemId in cache for validation
                     })).catch(e => console.error(`Error caching data for item ${itemId}:`, e));
@@ -193,7 +193,7 @@
                                     oldContainer.remove();
                                 }
                             }
-                            
+
                             currentItemID = id;
 
                             const observer = new MutationObserver(() => {
@@ -979,7 +979,7 @@
                 for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
                     try {
                         let response;
-                        
+
                         if (this.isPDA) {
                             // Use PDA's native handlers
                             if (method === 'GET') {
@@ -1522,10 +1522,10 @@
         function updateInfoContainer(wrapper, itemId, itemName) {
             // Remove the data-has-bazaar-info attribute to allow updates
             wrapper.removeAttribute('data-has-bazaar-info');
-            
+
             // Clear any existing listings
             scriptSettings.allListings = [];
-            
+
             let infoContainer = document.querySelector(`.bazaar-info-container[data-itemid="${itemId}"]`);
             if (!infoContainer) {
                 infoContainer = createInfoContainer(itemName, itemId);
@@ -1539,10 +1539,10 @@
                     header.textContent = `Bazaar Listings for ${itemName} (ID: ${itemId})`;
                 }
             }
-            
+
             // Set the item ID on the container
             infoContainer.dataset.itemid = itemId;
-            
+
             // Mark that we've added the info container
             wrapper.setAttribute('data-has-bazaar-info', 'true');
 
@@ -1665,7 +1665,7 @@
                             const cleanPrice = priceText.replace(/[$,]/g, '');
                             const urlPrice = parseInt(priceParam);
                             const currentPrice = parseInt(cleanPrice);
-                            
+
                             if (currentPrice !== urlPrice) {
                                 const diff = currentPrice - urlPrice;
                                 const direction = diff > 0 ? 'above' : 'below';
