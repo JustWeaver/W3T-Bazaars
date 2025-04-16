@@ -1,7 +1,7 @@
     // ==UserScript==
     // @name         Bazaars in Item Market powered by TornPal BETA
     // @namespace    http://tampermonkey.net/
-    // @version      2.40b
+    // @version      2.41
     // @description  Displays bazaar listings with sorting controls via TornPal
     // @author       Weav3r
     // @match        https://www.torn.com/*
@@ -1540,6 +1540,11 @@
                 }
             }
 
+            // Watch wrapper height
+            if (wrapper.style.height) {
+                watchWrapperHeight(wrapper, infoContainer);
+            }
+
             // Set the item ID on the container
             infoContainer.dataset.itemid = itemId;
 
@@ -1631,6 +1636,19 @@
             fetchBazaarListings(itemId, data => {
                 processResponse(data, data === null);
             });
+        }
+
+        function watchWrapperHeight(wrapper, infoContainer) {
+            new MutationObserver(() => updateHeight()).observe(wrapper, { attributes: true, attributeFilter: ["style"] });
+            updateHeight();
+
+            function updateHeight() {
+                if (!wrapper.style.height.startsWith("calc")) {
+                    wrapper.style.setProperty("--original-height", wrapper.style.height);
+                }
+
+                wrapper.style.height = `calc(var(--original-height) + ${infoContainer.scrollHeight}px)`;
+            }
         }
 
         if (window.location.href.includes("bazaar.php")) {
