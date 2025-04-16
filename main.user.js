@@ -1,7 +1,7 @@
     // ==UserScript==
     // @name         Bazaars in Item Market powered by TornPal BETA
     // @namespace    http://tampermonkey.net/
-    // @version      2.40b
+    // @version      2.42
     // @description  Displays bazaar listings with sorting controls via TornPal
     // @author       Weav3r
     // @match        https://www.torn.com/*
@@ -1048,10 +1048,10 @@
                     displayName: listing.player_name || `ID: ${listing.player_id}`
                 }));
 
-                callback(processedListings);
+                callback(processedListings, itemId);
             } catch (error) {
                 console.error(`Error fetching bazaar listings for item ${itemId}:`, error);
-                callback(null);
+                callback(null, null);
             }
         }
 
@@ -1628,7 +1628,9 @@
                     }
                 }
             }
-            fetchBazaarListings(itemId, data => {
+            fetchBazaarListings(itemId, (data, id) => {
+                if (data && itemId !== id) return;
+
                 processResponse(data, data === null);
             });
         }
