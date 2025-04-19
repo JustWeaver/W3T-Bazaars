@@ -1520,25 +1520,17 @@
         }
 
         function updateInfoContainer(wrapper, itemId, itemName) {
-            // Remove the data-has-bazaar-info attribute to allow updates
-            wrapper.removeAttribute('data-has-bazaar-info');
+            // Remove any existing bazaar info containers first
+            const existingContainers = wrapper.querySelectorAll('.bazaar-info-container');
+            existingContainers.forEach(container => {
+                container.remove();
+            });
 
             // Clear any existing listings
             scriptSettings.allListings = [];
 
-            let infoContainer = document.querySelector(`.bazaar-info-container[data-itemid="${itemId}"]`);
-            if (!infoContainer) {
-                infoContainer = createInfoContainer(itemName, itemId);
-                wrapper.insertBefore(infoContainer, wrapper.firstChild);
-            } else if (!wrapper.contains(infoContainer)) {
-                infoContainer = createInfoContainer(itemName, itemId);
-                wrapper.insertBefore(infoContainer, wrapper.firstChild);
-            } else {
-                const header = infoContainer.querySelector('.bazaar-info-header');
-                if (header) {
-                    header.textContent = `Bazaar Listings for ${itemName} (ID: ${itemId})`;
-                }
-            }
+            let infoContainer = createInfoContainer(itemName, itemId);
+            wrapper.insertBefore(infoContainer, wrapper.firstChild);
 
             // Watch wrapper height
             if (wrapper.style.height) {
