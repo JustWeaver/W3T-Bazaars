@@ -1,7 +1,7 @@
     // ==UserScript==
     // @name         Bazaars in Item Market powered by TornPal BETA
     // @namespace    http://tampermonkey.net/
-    // @version      2.42
+    // @version      2.43
     // @description  Displays bazaar listings with sorting controls via TornPal
     // @author       Weav3r
     // @match        https://www.torn.com/*
