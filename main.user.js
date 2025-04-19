@@ -982,10 +982,15 @@
 
                         if (this.isPDA) {
                             // Use PDA's native handlers
-                            if (method === 'GET') {
-                                response = await window.flutter_inappwebview.callHandler('PDA_httpGet', url, finalHeaders);
-                            } else if (method === 'POST') {
-                                response = await window.flutter_inappwebview.callHandler('PDA_httpPost', url, finalHeaders, finalData);
+                            try {
+                                if (method === 'GET') {
+                                    response = await window.flutter_inappwebview.callHandler('PDA_httpGet', url, finalHeaders);
+                                } else if (method === 'POST') {
+                                    response = await window.flutter_inappwebview.callHandler('PDA_httpPost', url, finalHeaders, finalData);
+                                }
+                            } catch (pdaError) {
+                                console.warn('PDA request failed:', pdaError);
+                                throw new Error('PDA request failed: ' + (pdaError.message || 'Unknown error'));
                             }
                         } else {
                             // Use GM.xmlHttpRequest
@@ -1004,7 +1009,7 @@
                                     },
                                     onerror: error => {
                                         clearTimeout(timeoutId);
-                                        reject(error);
+                                        reject(new Error('Request failed: ' + (error.message || 'Unknown error')));
                                     },
                                     ontimeout: () => {
                                         clearTimeout(timeoutId);
@@ -1014,13 +1019,23 @@
                             });
                         }
 
+                        if (!response) {
+                            throw new Error('No response received');
+                        }
+
                         if (response.status >= 200 && response.status < 300) {
-                            return JSON.parse(response.responseText);
+                            try {
+                                return JSON.parse(response.responseText);
+                            } catch (parseError) {
+                                throw new Error('Failed to parse response: ' + parseError.message);
+                            }
                         }
                         throw new Error(`Request failed with status ${response.status}`);
                     } catch (error) {
                         console.warn(`API request attempt ${attempt + 1} failed:`, error);
-                        if (attempt === this.MAX_RETRIES) throw error;
+                        if (attempt === this.MAX_RETRIES) {
+                            throw new Error('Max retries reached: ' + error.message);
+                        }
                         await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY_MS));
                     }
                 }
