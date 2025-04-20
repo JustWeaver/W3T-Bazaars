@@ -1,7 +1,7 @@
     // ==UserScript==
     // @name         Bazaars in Item Market powered by TornPal BETA
     // @namespace    http://tampermonkey.net/
-    // @version      2.43
+    // @version      2.42
     // @description  Displays bazaar listings with sorting controls via TornPal
     // @author       Weav3r
     // @match        https://www.torn.com/*
@@ -982,15 +982,10 @@
 
                         if (this.isPDA) {
                             // Use PDA's native handlers
-                            try {
-                                if (method === 'GET') {
-                                    response = await window.flutter_inappwebview.callHandler('PDA_httpGet', url, finalHeaders);
-                                } else if (method === 'POST') {
-                                    response = await window.flutter_inappwebview.callHandler('PDA_httpPost', url, finalHeaders, finalData);
-                                }
-                            } catch (pdaError) {
-                                console.warn('PDA request failed:', pdaError);
-                                throw new Error('PDA request failed: ' + (pdaError.message || 'Unknown error'));
+                            if (method === 'GET') {
+                                response = await window.flutter_inappwebview.callHandler('PDA_httpGet', url, finalHeaders);
+                            } else if (method === 'POST') {
+                                response = await window.flutter_inappwebview.callHandler('PDA_httpPost', url, finalHeaders, finalData);
                             }
                         } else {
                             // Use GM.xmlHttpRequest
@@ -1009,7 +1004,7 @@
                                     },
                                     onerror: error => {
                                         clearTimeout(timeoutId);
-                                        reject(new Error('Request failed: ' + (error.message || 'Unknown error')));
+                                        reject(error);
                                     },
                                     ontimeout: () => {
                                         clearTimeout(timeoutId);
@@ -1019,23 +1014,13 @@
                             });
                         }
 
-                        if (!response) {
-                            throw new Error('No response received');
-                        }
-
                         if (response.status >= 200 && response.status < 300) {
-                            try {
-                                return JSON.parse(response.responseText);
-                            } catch (parseError) {
-                                throw new Error('Failed to parse response: ' + parseError.message);
-                            }
+                            return JSON.parse(response.responseText);
                         }
                         throw new Error(`Request failed with status ${response.status}`);
                     } catch (error) {
                         console.warn(`API request attempt ${attempt + 1} failed:`, error);
-                        if (attempt === this.MAX_RETRIES) {
-                            throw new Error('Max retries reached: ' + error.message);
-                        }
+                        if (attempt === this.MAX_RETRIES) throw error;
                         await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY_MS));
                     }
                 }
