@@ -4,7 +4,7 @@ import { makeRequest } from "./fetch";
 
 type ListingSource = "bazaar" | "itemmarket";
 
-interface Listing {
+export interface Listing {
 	item_id: number;
 	player_id: number | null;
 	quantity: number;
@@ -13,7 +13,7 @@ interface Listing {
 	source: ListingSource;
 }
 
-interface Meta {
+export interface Meta {
 	marketlowestprice: number;
 	bazaarlowestprice: number;
 	pricedifference: number;
@@ -51,7 +51,7 @@ export async function getBazaarListings(
 
 	storage.set(`item-${itemId}`, data, {
 		amount: 30,
-		unit: Time.Seconds,
+		unit: Time.Weeks, // TODO: CHANGE THIS BACK TO SECONDS!!!!!!!!!!!!!!!
 	});
 
 	logger.debug(`Returned fresh data for item ${itemId}`);
